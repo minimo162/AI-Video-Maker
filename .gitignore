@@ -1,0 +1,5 @@
+.private/
+*.docx
+*.zip
+test-output/
+node_modules/

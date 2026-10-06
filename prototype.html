@@ -1,0 +1,27 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src blob:; connect-src 'none'; base-uri 'none'">
+<title>2場面 書き出し診断</title></head><body>
+<h1>12秒・2場面の合成書き出し診断</h1>
+<p>実機用の最小診断です。アプリ本体の素材読込・同期を保証するものではありません。</p>
+<button id="start">合成テストを開始</button><button id="cancel" disabled>取消</button>
+<p id="message" role="status">字幕・拡大・合成短音。外部通信なし。</p>
+<canvas id="canvas" width="1280" height="720" style="width:640px;max-width:100%"></canvas>
+<video id="result" controls style="width:640px;max-width:100%"></video><a id="save" hidden>試験動画を保存</a>
+<script>
+const el=id=>document.getElementById(id);let recording=null,context=null,raf=0,cancelled=false,url='';
+el('cancel').onclick=()=>{cancelled=true;cancelAnimationFrame(raf);if(recording?.state!=='inactive')recording.stop()};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&recording?.state==='recording')el('cancel').onclick()});
+el('start').onclick=async()=>{
+ let stream;cancelled=false;try{
+ el('start').disabled=true;el('cancel').disabled=false;context=new AudioContext();await context.resume();const dest=context.createMediaStreamDestination(),ctx=el('canvas').getContext('2d');
+ const mime=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));if(!mime)throw Error('対応形式がありません');
+ stream=new MediaStream([...el('canvas').captureStream(30).getVideoTracks(),...dest.stream.getAudioTracks()]);recording=new MediaRecorder(stream,{mimeType:mime});const chunks=[];
+ recording.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+ recording.onstop=async()=>{cancelAnimationFrame(raf);stream.getTracks().forEach(t=>t.stop());await context.close();el('start').disabled=false;el('cancel').disabled=true;if(cancelled){el('message').textContent='取り消しました。部分動画は保存しません';return}
+ const blob=new Blob(chunks,{type:recording.mimeType});if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(blob);el('result').src=url;el('save').href=url;el('save').download='synthetic-12s.'+(recording.mimeType.includes('mp4')?'mp4':'webm');el('save').hidden=false;el('message').textContent='記録終了 '+recording.mimeType+' '+blob.size+' bytes。音声と場面切替を再生確認してください。'};
+ recording.onerror=()=>{cancelled=true;el('message').textContent='記録に失敗しました';if(recording.state!=='inactive')recording.stop()};
+ const base=context.currentTime+.1;for(const t of [0,3,6,9,11]){const o=context.createOscillator(),g=context.createGain();o.frequency.value=660;g.gain.value=.1;o.connect(g).connect(dest);o.start(base+t);o.stop(base+t+.1)}
+ recording.start();function draw(){const t=Math.max(0,context.currentTime-base),s=t<6?1:2;ctx.fillStyle=s===1?'#15374b':'#533174';ctx.fillRect(0,0,1280,720);ctx.fillStyle='#61efc4';ctx.fillRect(100+(t%6)*100,120,160*(s===2?2:1),160);ctx.fillStyle='#000b';ctx.fillRect(40,560,1200,110);ctx.fillStyle='white';ctx.font='42px sans-serif';ctx.fillText('合成場面 '+s+' 字幕と拡大 '+t.toFixed(2)+'秒',80,630);el('message').textContent='検証中 '+t.toFixed(1)+' / 12秒';if(t>=12)recording.stop();else raf=requestAnimationFrame(draw)}draw();
+ }catch(e){stream?.getTracks().forEach(t=>t.stop());context?.close();el('message').textContent=e.message;el('start').disabled=false;el('cancel').disabled=true}
+};
+</script></body></html>
