@@ -14,7 +14,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&recording?
 el('start').onclick=async()=>{
  let stream;cancelled=false;try{
  el('start').disabled=true;el('cancel').disabled=false;context=new AudioContext();await context.resume();const dest=context.createMediaStreamDestination(),ctx=el('canvas').getContext('2d');
- const mime=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));if(!mime)throw Error('対応形式がありません');
+ const mime=['video/mp4;codecs=avc1.42E028,mp4a.40.2','video/mp4','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));if(!mime)throw Error('対応形式がありません');
  stream=new MediaStream([...el('canvas').captureStream(30).getVideoTracks(),...dest.stream.getAudioTracks()]);recording=new MediaRecorder(stream,{mimeType:mime});const chunks=[];
  recording.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
  recording.onstop=async()=>{cancelAnimationFrame(raf);stream.getTracks().forEach(t=>t.stop());await context.close();el('start').disabled=false;el('cancel').disabled=true;if(cancelled){el('message').textContent='取り消しました。部分動画は保存しません';return}

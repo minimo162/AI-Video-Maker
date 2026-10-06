@@ -34,8 +34,9 @@
 
     node tests/core.test.cjs
     node tests/editor.test.cjs
+    node tests/media-controller.test.cjs
 
-コア13項目・編集ハンドラー16項目を検証しました。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md) にあります。
+コア17項目・編集ハンドラー21項目・再生／書出し制御10項目を検証しました。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
 
 prototype.html は実機用の最小12秒診断です。アプリ本体の素材読込・同期の合格を示すものではありません。
 
