@@ -4,7 +4,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import hashlib, json, re
 root=Path(__file__).resolve().parent.parent
 (root/'.private').mkdir(exist_ok=True)
-files=['00_START_HERE.html','00_START_HERE.txt','index.html','prototype.html','README.md','USER_GUIDE.md','ACCEPTANCE.md','VALIDATION.md','LICENSE','.gitignore','tests/core.test.cjs','tests/editor.test.cjs','tests/media-controller.test.cjs','tests/workflow.test.cjs','tests/readability.test.cjs','REVIEW.md','scripts/package.py']
+files=['00_START_HERE.html','00_START_HERE.txt','index.html','prototype.html','README.md','USER_GUIDE.md','ACCEPTANCE.md','VALIDATION.md','LICENSE','.gitignore','tests/core.test.cjs','tests/editor.test.cjs','tests/media-controller.test.cjs','tests/workflow.test.cjs','tests/readability.test.cjs','tests/navigation.test.cjs','REVIEW.md','scripts/package.py']
 patterns=[r'gh[pousr]_[A-Za-z0-9]{20,}',r'github_pat_[A-Za-z0-9_]+',r'AKIA[A-Z0-9]{16}',r'-----BEGIN .*PRIVATE KEY-----',r'https://[^\s]+[?&]sig=',r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}',r'libfile_[A-Za-z0-9]+',r'file_000000',r'C:\\Users\\']
 manifest={}
 for name in files:

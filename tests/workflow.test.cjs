@@ -5,16 +5,19 @@ const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),
 const markup=html.slice(0,html.indexOf('<script>')),scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
 const tick=()=>new Promise(r=>setImmediate(r));
 function fixture(options={}){
- const state={confirmations:[],confirmationCount:0,downloads:[],windowListeners:{},docListeners:{},resumeGate:null,sourceGate:null,seekGate:null,rejectSource:false,activeElement:null,scheduled:[],frames:[],clock:0,clipboardFails:false,clipboardText:'',clipboardGate:null,audioCreations:0,audioCreationFails:!!options.audioCreationFails},els={},all=[];
+ const state={confirmations:[],confirmationCount:0,downloads:[],windowListeners:{},docListeners:{},resumeGate:null,sourceGate:null,seekGate:null,rejectSource:false,activeElement:null,scheduled:[],frames:[],clock:0,clipboardFails:false,clipboardText:'',clipboardGate:null,audioCreations:0,audioCreationFails:!!options.audioCreationFails,scrolls:[],styles:{},observerCallback:null,observed:null,dockHeight:options.dockHeight??110},els={},all=[];
  class E {
   constructor(tag='div'){this.tagName=tag;this.children=[];this.parentElement=null;this.dataset={};this.attributes={};this.listeners={};this.value='';this.files=[];this.textContent='';this.hidden=false;this.disabled=false;this.width=1920;this.height=1080;this.readyState=4;this.duration=12;this.videoWidth=1280;this.videoHeight=720;this.paused=true;this._time=0}
   append(...es){for(const e of es){e.parentElement=this;this.children.push(e)}}
+  contains(e){return e===this||this.children.some(c=>c.contains(e))}
+  getBoundingClientRect(){return {height:this.id==='quickActionBar'?state.dockHeight:50}}
+  scrollIntoView(options){state.scrolls.push({element:this,options})}
   replaceChildren(...es){for(const e of this.children)e.parentElement=null;this.children=[];this.append(...es)}
   setAttribute(k,v){this.attributes[k]=String(v);if(k.startsWith('data-'))this.dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=String(v);else if(['hidden','disabled','open'].includes(k))this[k]=true;else this[k]=v}
   removeAttribute(k){delete this.attributes[k];if(['hidden','disabled','open'].includes(k))this[k]=false;else delete this[k]}
   querySelector(s){const m=s.match(/^\[data-([^=\]]+)(?:="([^"]*)")?\]$/);if(!m)return null;const key=m[1].replace(/-([a-z])/g,(_,c)=>c.toUpperCase());for(const e of this.children){if(key in e.dataset&&(m[2]===undefined||e.dataset[key]===m[2]))return e;const found=e.querySelector(s);if(found)return found}return null}
   isEffectivelyDisabled(){if(this.disabled)return true;if(['button','input','select','textarea'].includes(this.tagName)){for(let p=this.parentElement;p;p=p.parentElement)if(p.tagName==='fieldset'&&p.disabled)return true}return false}
-  focus(){for(let p=this;p;p=p.parentElement){if(p.hidden)return;if(p.tagName==='details'&&!p.open&&this.tagName!=='summary')return;}if(!this.isEffectivelyDisabled()){state.activeElement=this;doc.activeElement=this}}select(){}click(){if(this.isEffectivelyDisabled())return;if(this.tagName==='a')state.downloads.push(this);return this.onclick?.()}
+  focus(){for(let p=this;p;p=p.parentElement){if(p.hidden)return;if(p.tagName==='details'&&!p.open&&this.tagName!=='summary')return;}if(!this.isEffectivelyDisabled()){state.activeElement=this;doc.activeElement=this;state.docListeners.focusin?.()}}select(){}click(){if(this.isEffectivelyDisabled())return;if(this.tagName==='a')state.downloads.push(this);return this.onclick?.()}
   addEventListener(k,f){(this.listeners[k]??=[]).push(f)}removeEventListener(k,f){this.listeners[k]=(this.listeners[k]??[]).filter(v=>v!==f)}
   emit(k){for(const f of [...(this.listeners[k]??[])])f();this['on'+k]?.()}
   load(){queueMicrotask(()=>{this.emit('loadedmetadata');this.emit('loadeddata')})}pause(){this.paused=true}play(){this.paused=false;return Promise.resolve()}
@@ -33,9 +36,9 @@ function fixture(options={}){
  }
  const nav=all.filter(e=>'step' in e.dataset),nudges=all.filter(e=>'nudge' in e.dataset);
  class AC {constructor(){state.audioCreations++;if(state.audioCreationFails)throw Error('audio start denied');this.state='running';this.destination={}}get currentTime(){return state.clock}resume(){return state.resumeGate??Promise.resolve()}decodeAudioData(){return Promise.resolve({duration:2})}close(){}createBufferSource(){const n={connect(){},start(...args){this.startArgs=args;state.scheduled.push(this)},stop(){this.stopped=true}};return n}}
- const doc={getElementById:id=>els[id],createElement:tag=>new E(tag),querySelector:s=>root.querySelector(s),querySelectorAll:s=>s==='[data-step]'?nav:s==='[data-nudge]'?nudges:[],fonts:{ready:Promise.resolve()},addEventListener:(k,f)=>state.docListeners[k]=f,hidden:false};
+ const doc={documentElement:{style:{setProperty:(key,value)=>state.styles[key]=value}},getElementById:id=>els[id],createElement:tag=>new E(tag),querySelector:s=>root.querySelector(s),querySelectorAll:s=>s==='[data-step]'?nav:s==='[data-nudge]'?nudges:[],fonts:{ready:Promise.resolve()},addEventListener:(k,f)=>state.docListeners[k]=f,hidden:false};
  class MR {static isTypeSupported(){return !options.noCodec}}
- const sandbox={document:doc,HTMLCanvasElement:options.noCapture?class{}:E,MediaRecorder:MR,window:{AudioContext:options.noAudio?undefined:AC,MediaRecorder:options.noRecorder?undefined:MR,addEventListener:(k,f)=>state.windowListeners[k]=f},navigator:{clipboard:{writeText:async text=>{if(state.clipboardFails)throw Error('clipboard unavailable');state.clipboardText=text;if(state.clipboardGate)await state.clipboardGate}}},confirm:()=>{state.confirmationCount++;return state.confirmations.length?state.confirmations.shift():true},URL:{createObjectURL:()=> 'blob:synthetic',revokeObjectURL(){}},Blob,TextDecoder,Map,Set,console,queueMicrotask,setTimeout:(fn,ms)=>ms===60000?0:setTimeout(fn,ms),clearTimeout,requestAnimationFrame:f=>{state.frames.push(f);return state.frames.length},cancelAnimationFrame(){},module:{exports:{}}};
+ const sandbox={document:doc,HTMLCanvasElement:options.noCapture?class{}:E,MediaRecorder:MR,window:{innerHeight:options.viewportHeight??900,visualViewport:options.visualViewportHeight?{height:options.visualViewportHeight,addEventListener:(k,f)=>state.viewportResize=f}:undefined,IntersectionObserver:options.observers?class{constructor(fn){state.observerCallback=fn}observe(e){state.observed=e}}:undefined,ResizeObserver:options.observers?class{constructor(fn){state.resizeCallback=fn}observe(){}}:undefined,AudioContext:options.noAudio?undefined:AC,MediaRecorder:options.noRecorder?undefined:MR,addEventListener:(k,f)=>state.windowListeners[k]=f},navigator:{clipboard:{writeText:async text=>{if(state.clipboardFails)throw Error('clipboard unavailable');state.clipboardText=text;if(state.clipboardGate)await state.clipboardGate}}},confirm:()=>{state.confirmationCount++;return state.confirmations.length?state.confirmations.shift():true},URL:{createObjectURL:()=> 'blob:synthetic',revokeObjectURL(){}},Blob,TextDecoder,Map,Set,console,queueMicrotask,setTimeout:(fn,ms)=>ms===60000?0:setTimeout(fn,ms),clearTimeout,requestAnimationFrame:f=>{state.frames.push(f);return state.frames.length},cancelAnimationFrame(){},module:{exports:{}}};
  vm.createContext(sandbox);scripts.forEach(s=>vm.runInContext(s,sandbox));
  const file=async(id,files)=>{els[id].files=files;await els[id].onchange()};
  const source=()=>file('sourceFile',[{name:'synthetic.mp4',size:100,lastModified:0}]);
@@ -47,9 +50,10 @@ function fixture(options={}){
  const visible=e=>!e.hidden&&(!e.parentElement||visible(e.parentElement));
  const step=n=>nav[n-1].onclick();
  const active=()=>nav.filter(e=>e.attributes['aria-current']==='step').map(e=>Number(e.dataset.step));
- return {E:els,nav,state,file,source,apply,saved,wav,audio,visible,step,active,root,doc};
+ return {E:els,nav,state,file,source,apply,saved,wav,audio,visible,step,active,root,doc,window:sandbox.window};
 }
-(async()=>{
+module.exports={fixture,markup,html,tick};
+if(require.main===module)(async()=>{
  let count=0;const test=async(name,fn)=>{await fn();count++;console.log('PASS '+name)};
  await test('初期画面は録画選択中心で動画・領域・場面を隠す',()=>{const f=fixture();assert.equal(f.visible(f.E.sourceFileLabel),true);for(const id of ['sourceWorkspace','sourcePreparation','regionPanel','scenePanel','stageActions','operationBar','projectToolbar'])assert.equal(f.visible(f.E[id]),false,id);assert.deepEqual(f.active(),[1]);assert.equal(f.visible(f.E.workflowNav),true);assert.ok(f.nav.slice(1).every(b=>b.disabled));assert.equal(f.E.audioFiles.disabled,true);assert.equal(f.E.saveProject.disabled,true);assert.doesNotMatch(f.E.dirty.textContent,/保存済み/)});
  await test('録画読込後は構成だけ解禁し、場面なしのWAVを拒否',async()=>{const f=fixture();await f.source();assert.equal(f.visible(f.E.sourceWorkspace),true);assert.equal(f.visible(f.E.regionPanel),true);assert.equal(f.E.sceneTrim.hidden,true);assert.equal(f.E.workflowNav.hidden,false);assert.equal(f.E.projectToolbar.hidden,false);assert.equal(f.nav[1].disabled,false);assert.equal(f.nav[2].disabled,true);f.step(3);assert.deepEqual(f.active(),[1]);await f.file('audioFiles',[f.wav('s001.wav')]);assert.match(f.E.audioFeedback.textContent,/場面を追加してから/);assert.equal(f.E.pendingAudio.children.length,0)});
