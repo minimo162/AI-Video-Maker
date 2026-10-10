@@ -144,5 +144,46 @@ if(require.main===module)(async()=>{
  await test('WAV音声準備の失敗をその場へ表示して以前の場面を保持する',async()=>{const f=fixture();await f.source();await f.apply();f.state.resumeGate=Promise.reject(Error('音声再開失敗'));await f.audio();assert.match(f.E.audioFeedback.textContent,/音声再開失敗/);assert.equal(f.E.sceneCards.children.length,2);assert.equal(f.E.editable.disabled,false)});
  await test('作業JSONは名前と時刻を含む安全なファイル名で保存する',async()=>{const f=fixture();await f.source();await f.apply();f.E.title.value='申請:/説明?';f.E.title.onchange();f.E.saveProject.click();assert.match(f.state.downloads.at(-1).download,/^AI-Video-Maker-申請__説明_-\d{8}-\d{6}\.json$/);assert.match(f.E.status.textContent,/保存結果を確認/)});
  await test('JavaScript停止時の説明と初期の無効状態をHTMLにも持つ',()=>{assert.match(markup,/<noscript>[\s\S]*JavaScriptが動いていない/);assert.match(markup,/<fieldset id="editable" disabled>/);assert.match(markup,/id="startupNotice"/);assert.match(markup,/メールやファイルサービスのプレビュー画面では動作しません/)});
+ await test('短い録画へ差し替えても場面とWAVを保ったまま開始・終了を修正できる',async()=>{
+  const f=fixture();await f.source();await f.apply();await f.audio();
+  const create=f.doc.createElement;f.doc.createElement=tag=>{const e=create(tag);if(tag==='video')e.duration=5;return e};
+  await f.file('sourceFile',[{name:'short.mp4',size:20,lastModified:2}]);f.step(2);
+  const card=()=>f.E.sceneCards.children.find(c=>c.dataset.sceneId==='s002');
+  const field=key=>card().querySelector('[data-field="'+key+'"]');
+  field('sourceOut').value='5';field('sourceOut').onchange();assert.equal(Number(field('sourceOut').value),12);
+  field('sourceIn').value='0';field('sourceIn').onchange();assert.equal(Number(field('sourceIn').value),0);assert.equal(Number(field('sourceOut').value),12);
+  assert.match(f.E.exportErrors.textContent,/s002.sourceOut：動画長を超え/);assert.equal(f.E.play.disabled,true);
+  field('sourceOut').value='6';field('sourceOut').onchange();assert.equal(Number(field('sourceOut').value),12);
+  field('sourceOut').value='5';field('sourceOut').onchange();assert.equal(Number(field('sourceOut').value),5);assert.doesNotMatch(f.E.exportErrors.textContent,/s002/);
+  assert.equal(f.E.sceneCards.children.length,2);assert.equal(field('narration').value,'説明2');assert.match(f.E.audioList.children[1].children[1].textContent,/s002.wav.*対応済み/);assert.match(f.E.sourceInfo.textContent,/5.0秒/);
+  f.E.undo.onclick();assert.equal(Number(field('sourceOut').value),12);f.E.undo.onclick();assert.equal(Number(field('sourceIn').value),6);
+ });
+ await test('範囲外の終了を修正中でも開始は実際の録画長の内側に限る',async()=>{
+  const f=fixture();await f.source();await f.apply();const create=f.doc.createElement;f.doc.createElement=tag=>{const e=create(tag);if(tag==='video')e.duration=5;return e};
+  await f.file('sourceFile',[{name:'short.mp4',size:20,lastModified:2}]);f.step(2);
+  const field=()=>f.E.sceneCards.children[1].querySelector('[data-field="sourceIn"]');
+  for(const value of ['-1','5','6','NaN']){field().value=value;field().onchange();assert.equal(Number(field().value),6)}
+  field().value='4';field().onchange();assert.equal(Number(field().value),4);assert.match(f.E.exportErrors.textContent,/s002.sourceOut：動画長を超え/);
+ });
+ await test('元動画の開始・終了ボタンでも短い録画の区間を修正して録画確認できる',async()=>{
+  const f=fixture();await f.source();await f.apply();await f.audio();const create=f.doc.createElement;f.doc.createElement=tag=>{const e=create(tag);if(tag==='video')e.duration=5;return e};
+  await f.file('sourceFile',[{name:'short.mp4',size:20,lastModified:2}]);f.E.selectedScene.value='s002';f.E.sourceVideo.currentTime=0;f.E.setIn.onclick();
+  assert.match(f.E.sourceFeedback.textContent,/終了時刻も録画の長さ以内/);assert.match(f.E.sourceFeedback.className,/warning/);assert.equal(f.E.play.disabled,true);
+  f.E.sourceVideo.currentTime=5;f.E.setOut.onclick();f.E.selectedScene.value='s001';f.E.setOut.onclick();f.E.confirmSource.onclick();
+  assert.doesNotMatch(f.E.exportErrors.textContent,/動画区間|動画長|録画の一致/);assert.equal(f.E.confirmSource.hidden,true);assert.equal(f.E.play.disabled,false);
+ });
+ await test('復元した場面を削除してIDを再利用しても旧音声の本文・メタデータは残さない',async()=>{
+  const f=fixture(),p=f.saved();p.scenes=p.scenes.map(s=>({...s,narration:'新しい本文',audioAssigned:true,audioFile:s.id+'.wav',audioTextAtImport:'保存時の旧本文',audioMeta:{size:99,lastModified:19,duration:2}}));
+  await f.file('projectFile',[{text:async()=>JSON.stringify(p)}]);await f.source();f.step(2);f.E.sceneCards.children[0].children[0].children[4].onclick();f.E.addScene.onclick();
+  const card=f.E.sceneCards.children.find(c=>c.dataset.sceneId==='s001'),field=card.querySelector('[data-field="narration"]');field.value='再作成した場面の本文';field.onchange();
+  const count=f.state.confirmationCount;await f.file('audioFiles',[f.wav('s001.wav')]);assert.equal(f.state.confirmationCount,count);
+  assert.match(f.E.audioList.children[1].children[1].textContent,/s001.wav.*対応済み/);assert.doesNotMatch(f.E.exportErrors.textContent,/s001：ナレーション/);
+  await f.file('audioFiles',[f.wav('s002.wav')]);assert.match(f.E.audioList.children[0].children[1].textContent,/再生成必要/);
+ });
+ await test('場面削除を取り消すと復元音声の期待本文も戻る',async()=>{
+  const f=fixture(),p=f.saved();p.scenes[0]={...p.scenes[0],narration:'保存後に変更した本文',audioAssigned:true,audioFile:'s001.wav',audioTextAtImport:'保存時の旧本文',audioMeta:{size:99,lastModified:19,duration:2}};
+  await f.file('projectFile',[{text:async()=>JSON.stringify(p)}]);await f.source();f.step(2);f.E.sceneCards.children[0].children[0].children[4].onclick();f.E.undo.onclick();
+  const count=f.state.confirmationCount;await f.file('audioFiles',[f.wav('s001.wav')]);assert.equal(f.state.confirmationCount,count+1);assert.match(f.E.audioList.children[0].children[1].textContent,/再生成必要/);assert.match(f.E.exportErrors.textContent,/s001：ナレーション/);
+ });
  console.log(count+' workflow model tests passed. Visual layout, real dialogs, and browser export remain unverified.');
 })().catch(e=>{console.error(e.message+'\n'+e.stack.split('\n').slice(1,4).join('\n'));process.exitCode=1});
