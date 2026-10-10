@@ -78,5 +78,6 @@ function fixture(){
   f.state.clock=12;next.currentTime=11.99;await f.state.frames.at(-1)();await pending;
   assert.match(f.els.exportResult.children[1].download,/\.(mp4|webm)$/);assert.doesNotMatch(f.els.status.textContent,/同期が崩れ/);assert.ok(f.state.tracks.every(t=>t.stopped));assert.ok(f.state.scheduled.every(n=>n.stopped));
  });
+ await run('声なしプレビューは保持したWAVをスケジュールしない',async()=>{const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();const pending=f.els.play.onclick();await tick();await tick();assert.equal(f.state.scheduled.length,0);f.els.cancel.onclick();await pending;assert.equal(f.els.editable.disabled,false)});
  console.log(count+' simulated media controller tests passed; browser acceptance remains unverified.');
 })().catch(e=>{console.error(e);process.exitCode=1});

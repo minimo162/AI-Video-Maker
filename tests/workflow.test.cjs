@@ -185,15 +185,59 @@ if(require.main===module)(async()=>{
   await f.file('projectFile',[{text:async()=>JSON.stringify(p)}]);await f.source();f.step(2);f.E.sceneCards.children[0].children[0].children[4].onclick();f.E.undo.onclick();
   const count=f.state.confirmationCount;await f.file('audioFiles',[f.wav('s001.wav')]);assert.equal(f.state.confirmationCount,count+1);assert.match(f.E.audioList.children[0].children[1].textContent,/再生成必要/);assert.match(f.E.exportErrors.textContent,/s001：ナレーション/);
  });
- await test('録画選択後は画像生成でなく最初の1本を案内する',async()=>{const f=fixture();assert.equal(f.E.firstVideoEntry.hidden,true);await f.source();assert.equal(f.E.firstVideoEntry.hidden,false);assert.equal(f.E.sourcePreparation.hidden,true);assert.equal(f.E.guideAction.textContent,'この録画で1本作る');assert.match(f.E.firstVideoLength.textContent,/12.0秒/);f.E.startCopilot.click();assert.equal(f.E.sourcePreparation.hidden,false);assert.equal(f.E.guideAction.textContent,'Copilot用の画像を作る');assert.equal(f.state.activeElement,f.E.purpose)});
- await test('初心者の1場面は録画全体を使い既存場面を上書きしない',async()=>{const f=fixture();await f.source();f.E.guideAction.click();assert.deepEqual(f.active(),[2]);assert.equal(f.E.sceneCards.children.length,1);assert.equal(f.E.structureIntake.hidden,true);assert.equal(f.E.firstVideoNote.hidden,false);assert.equal(f.E.sceneCards.children[0].querySelector('[data-field="sourceOut"]').value,12);assert.equal(f.state.activeElement,f.E.sceneCards.children[0].querySelector('[data-field="caption"]'));assert.equal(f.E.downloads.children.length,0);const card=f.E.sceneCards.children[0];f.E.startFirstVideo.onclick();assert.equal(f.E.sceneCards.children[0],card);await f.apply();assert.equal(f.E.structureIntake.hidden,false);assert.equal(f.E.sceneCards.children.length,2)});
- await test('本文だけをコピーし任意名のWAV1本で完成へ進める',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();const card=f.E.sceneCards.children[0],n=card.querySelector('[data-field="narration"]');n.value='申請するボタンを押します。';n.onchange();f.E.guideAction.click();assert.deepEqual(f.active(),[3]);assert.equal(f.E.firstVoiceText.value,n.value);assert.equal(f.E.firstVoiceHelp.hidden,false);assert.equal(f.E.voiceScriptPanel.hidden,true);await f.E.guideAction.click();assert.equal(f.state.clipboardText,n.value);assert.doesNotMatch(f.state.clipboardText,/s001|wav/);assert.equal(f.E.guideAction.textContent,'WAVファイルを選ぶ');assert.match(f.E.firstVoiceFeedback.textContent,/コピーしました/);await f.file('audioFiles',[f.wav('読み上げ音声.wav')]);assert.equal(f.E.pendingAudio.children.length,0);assert.match(f.E.audioProgress.textContent,/1 \/ 1/);f.E.guideAction.click();await tick();assert.deepEqual(f.active(),[4]);assert.equal(f.E.export.disabled,false);assert.equal(f.E.guideAction.textContent,'動画を作成してダウンロード')});
- await test('初心者でも本文変更後の古いWAVは書き出せない',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();const n=f.E.sceneCards.children[0].querySelector('[data-field="narration"]');n.value='元の説明';n.onchange();f.step(3);await f.file('audioFiles',[f.wav('声.wav')]);f.step(2);n.value='新しい説明';n.onchange();f.step(4);await tick();assert.equal(f.E.export.disabled,true);assert.match(f.E.exportErrors.textContent,/再生成または内容確認/)});
- await test('空の本文はコピーせず入力へ案内し字幕の空欄は許可する',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();assert.equal(f.E.guideAction.textContent,'説明を書く');f.step(3);await f.E.copyFirstNarration.onclick();assert.equal(f.state.clipboardText,'');assert.equal(f.E.copyFirstNarration.disabled,true);await f.file('audioFiles',[f.wav('用意済みの声.wav')]);f.step(4);await tick();assert.equal(f.E.export.disabled,false)});
- await test('本文コピー失敗は見えている欄へフォーカスして手動コピーを案内する',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();const n=f.E.sceneCards.children[0].querySelector('[data-field="narration"]');n.value='コピーする説明';n.onchange();f.step(3);f.state.clipboardFails=true;await f.E.copyFirstNarration.click();assert.equal(f.state.activeElement,f.E.firstVoiceText);assert.equal(f.visible(f.E.firstVoiceFeedback),true);assert.match(f.E.firstVoiceFeedback.textContent,/手動でコピー/);assert.equal(f.E.guideAction.textContent,'読み上げる本文だけをコピー')});
- await test('初心者の複数WAVを勝手に同じ場面へ上書きしない',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();f.step(3);await f.file('audioFiles',[f.wav('声A.wav'),f.wav('声B.wav')]);assert.equal(f.E.pendingAudio.children.length,2);assert.match(f.E.audioProgress.textContent,/0 \/ 1/);assert.equal(f.E.export.disabled,true)});
- await test('初心者の場面追加と新規作業は簡易ルートの対応付けを解除する',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();f.E.exitFirstVideo.click();assert.equal(f.E.structureIntake.hidden,false);f.E.addScene.click();f.step(3);assert.equal(f.E.firstVoiceHelp.hidden,true);assert.equal(f.E.voiceScriptPanel.hidden,false);await f.file('audioFiles',[f.wav('声.wav')]);assert.equal(f.E.pendingAudio.children.length,1);f.E.newProject.click();await f.source();assert.equal(f.E.firstVideoNote.hidden,true);assert.equal(f.E.guideAction.textContent,'この録画で1本作る')});
- await test('最初の1場面作成は取り消して同じ録画から再開できる',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();f.E.undo.click();assert.equal(f.E.sceneCards.children.length,0);f.step(1);assert.equal(f.E.firstVideoEntry.hidden,false);assert.match(f.E.sourceInfo.textContent,/synthetic.mp4/);f.E.guideAction.click();assert.equal(f.E.sceneCards.children.length,1)});
- await test('本文コピー中の編集で新しい説明をコピー済みと誤認しない',async()=>{const f=fixture();await f.source();f.E.startFirstVideo.click();const n=f.E.sceneCards.children[0].querySelector('[data-field="narration"]');n.value='コピー前の説明';n.onchange();f.step(3);let done;f.state.clipboardGate=new Promise(r=>done=r);const copying=f.E.copyFirstNarration.click();f.step(2);n.value='コピー待ち中に変えた説明';n.onchange();done();await copying;f.step(3);assert.equal(f.state.clipboardText,'コピー前の説明');assert.equal(f.E.guideAction.textContent,'読み上げる本文だけをコピー')});
+ async function beginner(single=false){
+  const f=fixture();await f.source();f.E.startFirstVideo.click();f.E.purpose.value='申請の検索から登録まで説明したい';f.E.purpose.onchange();f.step(2);
+  if(single){const p=f.saved();p.scenes=p.scenes.slice(0,1);f.E.proposal.value=JSON.stringify(p);await f.E.applyProposal.click()}else await f.apply();
+  return f;
+ }
+ await test('初心者の入口は原稿自作でなくCopilotの下書きを案内する',async()=>{
+  const f=fixture();await f.source();assert.equal(f.E.sourcePreparation.hidden,true);assert.equal(f.E.guideAction.textContent,'Copilotで字幕の下書きを作る');
+  f.E.guideAction.click();assert.equal(f.E.sceneCards.children.length,0);assert.equal(f.E.sourcePreparation.hidden,false);assert.equal(f.E.guideAction.textContent,'説明したい操作を書く');assert.equal(f.state.activeElement,f.E.purpose);
+  f.E.purpose.value='申請を登録する';f.E.purpose.onchange();assert.equal(f.E.guideAction.textContent,'Copilot用の画像を作る');await f.E.guideAction.click();assert.equal(f.E.downloads.children.length,1);
+  f.E.guideAction.click();f.E.guideAction.click();assert.deepEqual(f.active(),[2]);await f.E.guideAction.click();assert.match(f.state.clipboardText,/読み上げ原稿（narration）をあなたが作成/);assert.match(f.state.clipboardText,/声を付けず字幕だけ/);assert.match(f.state.clipboardText,/申請を登録する/);assert.equal(f.E.guideAction.textContent,'回答を貼り付ける');
+ });
+ await test('Copilot回答後はWAVも原稿の自作もなしで字幕の完成へ進める',async()=>{
+  const f=await beginner();assert.equal(f.E.sceneCards.children.length,2);assert.equal(f.E.firstVideoNote.hidden,false);assert.equal(f.E.useNarration.checked,false);assert.equal(f.E.audioFiles.disabled,true);assert.equal(f.E.guideAction.textContent,'字幕の動画を確認する');
+  f.E.guideAction.click();await tick();assert.deepEqual(f.active(),[4]);assert.equal(f.E.export.disabled,false);assert.equal(f.E.play.disabled,false);assert.match(f.E.audioSummary.textContent,/声なし/);assert.doesNotMatch(f.E.exportErrors.textContent,/WAV/);assert.match(f.E.outcomeMediaLabel.textContent,/声なし/);
+ });
+ await test('字幕のみなら読み上げ原稿が空でも次へで音声工程を飛ばせる',async()=>{
+  const f=await beginner();for(const card of f.E.sceneCards.children){const n=card.querySelector('[data-field="narration"]');n.value='';n.onchange()}
+  f.E.nextStep.click();await tick();assert.deepEqual(f.active(),[4]);assert.equal(f.E.export.disabled,false);
+ });
+ await test('任意の声工程を選ぶとCopilotの原稿をコピーしWAV必須へ戻る',async()=>{
+  const f=await beginner();f.E.useNarration.checked=true;f.E.useNarration.onchange();assert.equal(f.E.guideAction.textContent,'声の台本へ進む');f.E.guideAction.click();assert.deepEqual(f.active(),[3]);await f.E.guideAction.click();assert.match(f.state.clipboardText,/説明1/);assert.match(f.state.clipboardText,/説明2/);assert.equal(f.E.export.disabled,true);
+  await f.audio();f.E.guideAction.click();await tick();assert.deepEqual(f.active(),[4]);assert.equal(f.E.export.disabled,false);
+ });
+ await test('声を省略しても再選択時は古いWAVの一致チェックを維持する',async()=>{
+  const f=await beginner();f.E.useNarration.checked=true;f.E.useNarration.onchange();await f.audio();const n=f.E.sceneCards.children[0].querySelector('[data-field="narration"]');n.value='変更した原稿';n.onchange();f.step(4);await tick();assert.equal(f.E.export.disabled,true);
+  f.step(2);f.E.useNarration.checked=false;f.E.useNarration.onchange();f.step(4);await tick();assert.equal(f.E.export.disabled,false);f.step(2);f.E.useNarration.checked=true;f.E.useNarration.onchange();f.step(4);await tick();assert.equal(f.E.export.disabled,true);assert.match(f.E.exportErrors.textContent,/再生成または内容確認/);
+ });
+ await test('字幕のみの保存JSONは録画の再選択だけで完成を再開できる',async()=>{
+  const f=fixture(),p=f.saved();p.audioMode='none';await f.file('projectFile',[{text:async()=>JSON.stringify(p)}]);assert.doesNotMatch(f.E.restoreChecklist.textContent,/WAV/);await f.source();assert.equal(f.E.useNarration.checked,false);assert.equal(f.E.guideAction.textContent,'完成を確認する');f.E.guideAction.click();await tick();assert.equal(f.E.export.disabled,false);
+ });
+ await test('声なしで声工程へ寄ってもVOICEVOXの作業は要求しない',async()=>{
+  const f=await beginner();f.step(3);assert.equal(f.E.noVoicePanel.hidden,false);assert.equal(f.E.voiceHandoff.hidden,true);assert.equal(f.E.firstVoiceHelp.hidden,true);assert.equal(f.E.guideAction.textContent,'字幕の動画を確認する');f.E.enableVoice.click();assert.equal(f.E.voiceHandoff.hidden,false);assert.equal(f.E.useNarration.checked,true);assert.equal(f.E.export.disabled,true);
+ });
+ await test('声なしへのWAV読み込みは明示的な音声有効化を促しデータを変えない',async()=>{
+  const f=await beginner();await f.file('audioFiles',[f.wav('s001.wav')]);assert.match(f.E.audioFeedback.textContent,/先に/);assert.match(f.E.audioProgress.textContent,/0 \/ 2/);assert.equal(f.E.pendingAudio.children.length,0);
+ });
+ await test('声なしでも長すぎる字幕の書き出しガードは緩めない',async()=>{
+  const f=await beginner(),c=f.E.sceneCards.children[0].querySelector('[data-field="caption"]');c.value='長'.repeat(200);c.onchange();f.step(4);await tick();assert.equal(f.E.export.disabled,true);assert.match(f.E.exportErrors.textContent,/字幕が2行/);
+ });
+ await test('声の切り替えは取り消せて読み込んだ音声を失わない',async()=>{
+  const f=await beginner();f.E.useNarration.checked=true;f.E.useNarration.onchange();await f.audio();f.E.useNarration.checked=false;f.E.useNarration.onchange();assert.equal(f.E.useNarration.checked,false);f.E.undo.click();assert.equal(f.E.useNarration.checked,true);assert.match(f.E.audioProgress.textContent,/2 \/ 2/);
+ });
+ await test('初心者でも1場面に声を追加するときは本文だけをコピーできる',async()=>{
+  const f=await beginner(true);f.E.useNarration.checked=true;f.E.useNarration.onchange();f.step(3);assert.equal(f.E.firstVoiceHelp.hidden,false);await f.E.guideAction.click();assert.equal(f.state.clipboardText,'説明1');assert.doesNotMatch(f.state.clipboardText,/s001|wav/);await f.file('audioFiles',[f.wav('読み上げ音声.wav')]);assert.equal(f.E.pendingAudio.children.length,0);f.step(4);await tick();assert.equal(f.E.export.disabled,false);
+ });
+ await test('任意音声でも複数のWAVを1場面へ勝手に上書きしない',async()=>{
+  const f=await beginner(true);f.E.useNarration.checked=true;f.E.useNarration.onchange();f.step(3);await f.file('audioFiles',[f.wav('声A.wav'),f.wav('声B.wav')]);assert.equal(f.E.pendingAudio.children.length,2);assert.equal(f.E.export.disabled,true);
+ });
+ await test('初心者の本文コピー待ち中の編集をコピー済みと誤認しない',async()=>{
+  const f=await beginner(true);f.E.useNarration.checked=true;f.E.useNarration.onchange();const n=f.E.sceneCards.children[0].querySelector('[data-field="narration"]');f.step(3);let done;f.state.clipboardGate=new Promise(r=>done=r);const copying=f.E.copyFirstNarration.click();f.step(2);n.value='コピー待ち中の新しい原稿';n.onchange();done();await copying;f.step(3);assert.equal(f.state.clipboardText,'説明1');assert.equal(f.E.guideAction.textContent,'読み上げる本文だけをコピー');
+ });
+ await test('新規作業は字幕のみの設定を持ち越さず入口で選び直せる',async()=>{
+  const f=await beginner();f.E.newProject.click();await f.source();assert.equal(f.E.guideAction.textContent,'Copilotで字幕の下書きを作る');f.E.startCopilot.click();await f.apply();assert.equal(f.E.useNarration.checked,true);assert.equal(f.E.export.disabled,true);
+ });
  console.log(count+' workflow model tests passed. Visual layout, real dialogs, and browser export remain unverified.');
 })().catch(e=>{console.error(e.message+'\n'+e.stack.split('\n').slice(1,4).join('\n'));process.exitCode=1});
