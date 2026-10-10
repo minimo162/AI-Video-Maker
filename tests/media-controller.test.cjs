@@ -107,5 +107,19 @@ function fixture(){
   const pending=f.els.export.onclick();await tick();await tick();assert.equal(f.state.silentClocks.length,2);assert.equal(f.state.silentClocks[0].stopped,true);assert.equal(f.state.silentClocks[0].disconnected,true);assert.equal(f.state.silentClocks[1].stopped,undefined);
   assert.match(f.state.recorders.filter(r=>!r.probe).at(-1).mimeType,/webm/);f.els.cancel.onclick();await pending;assert.ok(f.state.silentClocks.every(n=>n.stopped&&n.disconnected));assert.equal(f.state.scheduled.length,0);
  });
+ await run('提示フレームを監視して保持し停止後の古い通知は破棄する',async()=>{
+  const f=fixture();await f.ready();const v=f.els.sourceVideo;let nextId=0;const callbacks=new Map();
+  v.requestVideoFrameCallback=cb=>{callbacks.set(++nextId,cb);return nextId};v.cancelVideoFrameCallback=id=>callbacks.delete(id);
+  const pending=f.els.play.onclick();await tick();await tick();assert.equal(callbacks.size,1);
+  const [id,cb]=[...callbacks][0];callbacks.delete(id);f.state.clock=.5;v.currentTime=.5;const before=f.state.drawn.length;cb(500,{mediaTime:.5});
+  assert.equal(f.state.drawn.length,before+1);assert.equal(callbacks.size,1);await f.state.frames.at(-1)();
+  f.els.cancel.onclick();await pending;assert.equal(callbacks.size,0);const after=f.state.drawn.length;cb(600,{mediaTime:.6});assert.equal(f.state.drawn.length,after);assert.equal(callbacks.size,0);
+ });
+ await run('再生位置だけが進み提示フレームが止まったら出力を成功扱いしない',async()=>{
+  const f=fixture();await f.ready();const v=f.els.sourceVideo;let cancelled=false;
+  v.requestVideoFrameCallback=()=>1;v.cancelVideoFrameCallback=()=>{cancelled=true};
+  const pending=f.els.export.onclick();await tick();await tick();f.state.clock=1.1;v.currentTime=1.1;await f.state.frames.at(-1)();await pending;
+  assert.match(f.els.status.textContent,/映像デコードが停止/);assert.equal(f.els.exportResult.children.length,0);assert.equal(cancelled,true);assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
  console.log(count+' simulated media controller tests passed; browser acceptance remains unverified.');
 })().catch(e=>{console.error(e);process.exitCode=1});
