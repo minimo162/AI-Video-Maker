@@ -218,7 +218,10 @@ function download(blob,name){const a=document.createElement('a'),u=url(blob);a.h
 function clearExport(){if(exportURL)URL.revokeObjectURL(exportURL);exportURL='';$('exportResult').replaceChildren()}
 function busySet(on,kind='process'){if(!on&&cancelRequested)note(cancelReason,'warning');busy=on;operationKind=on?kind:'';cancelRequested=false;$('editable').disabled=on;$('exportSettings').disabled=on;['title','projectFile','demo','demoFromHelp','confirmSource','newProject'].forEach(id=>$(id).disabled=on);if(on){cancelReason='';$('progress').value=0;if(currentStep===4)$('previewStatus').textContent='準備しています…'}videos[0].controls=!on;updateWorkflow()}
 function remember(){history.push({project:Core.clone(project),audios:new Map(audios),expectedAudioText:new Map(expectedAudioText)});if(history.length>50)history.shift()}
-function changed(keepCards=false){clearGuideResult();dirty=true;clearExport();update(keepCards)}
+function changed(keepCards=false){
+ for(const id of expectedAudioText.keys())if(!scene(id))expectedAudioText.delete(id);
+ clearGuideResult();dirty=true;clearExport();update(keepCards);
+}
 function commit(p,keepCards=false){remember();project=p;changed(keepCards)}
 function scene(id){return project.scenes.find(s=>s.id===id)}
 function audioValid(s){const a=audios.get(s.id);return a&&a.text===s.narration}
@@ -226,7 +229,18 @@ function make(tag,text){const e=document.createElement(tag);if(text!==undefined)
 function button(text,fn,accessibleName){const b=make('button',text);b.type='button';b.onclick=fn;if(accessibleName)b.setAttribute('aria-label',accessibleName);return b}
 function label(text,input){const l=make('label',text);l.append(input);return l}
 function select(options,value){const e=make('select');for(const [val,text] of options){const o=make('option',text);o.value=val;e.append(o)}e.value=value;return e}
-function editScene(id,key,value){const p=Core.clone(project),s=p.scenes.find(s=>s.id===id);if(!s||busy)return;s[key]=value;const r=Core.validate({...p,scenes:[s]},p);if(r.errors.length){const text=r.errors.join('\n')+'\n入力を適用せず、前の値を保持しました。';sceneErrors.set(id,{key,text});update();if(currentStep===1&&$('selectedScene').value===id)feedback('sourceFeedback',text,'error');return}if(sceneErrors.get(id)?.key===key)sceneErrors.delete(id);p.scenes[p.scenes.findIndex(q=>q.id===id)]=r.project.scenes[0];commit(p,true);if(currentStep===1&&$('selectedScene').value===id){const problem=sceneErrors.get(id);feedback('sourceFeedback',problem?.text??id+' の区間を変更しました。',problem?'error':'notice')}}
+function editScene(id,key,value){
+ const p=Core.clone(project),s=p.scenes.find(s=>s.id===id);if(!s||busy)return;s[key]=value;
+ const repairingRange=key==='sourceIn'&&p.source&&s.sourceOut>p.source.duration;
+ // Validate the new start against the recording, without changing the unedited end.
+ const candidate=repairingRange?{...s,sourceOut:p.source.duration}:s;
+ const r=Core.validate({...p,scenes:[candidate]},p);
+ if(r.errors.length){const text=r.errors.join('\n')+'\n入力を適用せず、前の値を保持しました。';sceneErrors.set(id,{key,text});update();if(currentStep===1&&$('selectedScene').value===id)feedback('sourceFeedback',text,'error');return}
+ if(sceneErrors.get(id)?.key===key)sceneErrors.delete(id);
+ if(repairingRange)r.project.scenes[0].sourceOut=s.sourceOut;
+ p.scenes[p.scenes.findIndex(q=>q.id===id)]=r.project.scenes[0];commit(p,true);
+ if(currentStep===1&&$('selectedScene').value===id){const problem=sceneErrors.get(id);feedback('sourceFeedback',problem?.text??(repairingRange?id+' の開始時刻を変更しました。終了時刻も録画の長さ以内に修正してください。':id+' の区間を変更しました。'),problem?'error':repairingRange?'warning':'notice')}
+}
 function numericField(s,key,text){const n=make('input');n.dataset.field=key;n.setAttribute('aria-label',s.id+'：'+text);n.setAttribute('aria-describedby','scene-feedback-'+s.id);n.type='number';n.step='.1';n.value=s[key];n.onchange=()=>editScene(s.id,key,Number(n.value));sceneFieldNodes.set(s.id+':'+key,n);return label(text,n)}
 function textField(s,key,text,area=false){const e=make(area?'textarea':'input');e.dataset.field=key;e.setAttribute('aria-label',s.id+'：'+text);e.setAttribute('aria-describedby','scene-feedback-'+s.id);e.value=s[key];e.maxLength=key==='narration'?500:200;e.onchange=()=>editScene(s.id,key,e.value);sceneFieldNodes.set(s.id+':'+key,e);return label(text,e)}
 function captionLines(s){const ctx=$('preview').getContext('2d');ctx.font=(52*project.output.width/1920)+'px system-ui, sans-serif';return Core.wrap(ctx,s.caption,project.output.width-160*project.output.width/1920)}
@@ -393,7 +407,7 @@ async function playTimeline(start=0,exporting=false,recorder=null,dest=ac.destin
  let ended=false;function abort(e){if(ended||stopped||token!==operation)return;ended=true;stopped=true;cancelAnimationFrame(raf);nodes.forEach(n=>{try{n.stop()}catch{}});videos.forEach(v=>v.pause());rejectDone(e)}
  function check(){if(stopped||token!==operation)throw Error('再生・書き出しを取り消しました');if(document.hidden)throw Error('タブが非表示になりました')}
  function prepareNext(){const next=current.index+1;if(next>=tl.items.length){prepared=null;preparing=Promise.resolve();return}const nextVideo=1-active,v=videos[nextVideo];preparing=seek(v,tl.items[next].scene.sourceIn).then(()=>{if(!stopped&&token===operation)prepared={index:next,video:nextVideo}}).catch(e=>{if(!stopped)abort(e)})}
- try{await ensureAudio();check();await document.fonts.ready;check();await seek(videos[active],current.scene.sourceIn+Math.min(current.local,Math.max(0,current.scene.sourceOut-current.scene.sourceIn-1/project.output.fps)));check();prepareNext();await preparing;check();
+ try{await ensureAudio();check();videos.forEach(v=>{v.playbackRate=1;v.muted=true});await document.fonts.ready;check();await seek(videos[active],current.scene.sourceIn+Math.min(current.local,Math.max(0,current.scene.sourceOut-current.scene.sourceIn-1/project.output.fps)));check();prepareNext();await preparing;check();
  const held=document.createElement('canvas');let heldFor=null;function captureValidFrame(position,v){if(v.readyState<2||v.currentTime<position.scene.sourceIn-.00001||v.currentTime>=position.scene.sourceOut)return false;if(held.width!==v.videoWidth)held.width=v.videoWidth;if(held.height!==v.videoHeight)held.height=v.videoHeight;held.getContext('2d').drawImage(v,0,0,held.width,held.height);heldFor=position.scene.id;return true}
  if(!captureValidFrame(current,videos[active]))throw Error('指定区間内の映像を準備できません');renderScene($('preview'),current.scene,current.local,current.duration,held,current.index===tl.items.length-1);if(current.local<current.scene.sourceOut-current.scene.sourceIn){await videos[active].play();check()}if(recorder)recorder.start(1000);base=ac.currentTime;nodes=scheduleAudio(tl,start,base,dest);lastAdvance=ac.currentTime;lastFrameTime=videos[active].currentTime;
  async function frame(){if(stopped)return;try{if(document.hidden)throw Error('タブが非表示になりました。編集データを保持し、処理を中断しました');if(ac.state!=='running')throw Error('音声再生が停止しました。再実行してください');const time=Math.min(tl.total,start+Math.max(0,ac.currentTime-base)),position=Core.locate(tl,time);
