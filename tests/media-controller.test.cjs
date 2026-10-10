@@ -79,5 +79,20 @@ function fixture(){
   assert.match(f.els.exportResult.children[1].download,/\.(mp4|webm)$/);assert.doesNotMatch(f.els.status.textContent,/同期が崩れ/);assert.ok(f.state.tracks.every(t=>t.stopped));assert.ok(f.state.scheduled.every(n=>n.stopped));
  });
  await run('声なしプレビューは保持したWAVをスケジュールしない',async()=>{const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();const pending=f.els.play.onclick();await tick();await tick();assert.equal(f.state.scheduled.length,0);f.els.cancel.onclick();await pending;assert.equal(f.els.editable.disabled,false)});
+ await run('声なし書き出しは音声クロックではなく実時間で場面と終了を進める',async()=>{
+  const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.state.demoClock=50000;
+  const pending=f.els.export.onclick();await tick();await tick();const recorder=f.state.recorders.find(r=>!r.probe);assert.ok(recorder.started);
+  f.state.clock=1000;f.state.demoClock=51000;f.els.sourceVideo.currentTime=1;await f.state.frames.at(-1)();
+  assert.equal(recorder.state,'recording');assert.equal(Number(f.els.timeline.value),1);assert.equal(f.state.scheduled.length,0);
+  f.state.demoClock=56100;f.els.sourceVideo.currentTime=5.99;f.state.videos[0].currentTime=6.1;await f.state.frames.at(-1)();
+  assert.equal(recorder.state,'recording');assert.ok(Math.abs(Number(f.els.timeline.value)-6.1)<.00001);
+  recorder.ondataavailable({data:new Blob(['synthetic output'])});f.state.demoClock=62000;f.state.videos[0].currentTime=11.99;await f.state.frames.at(-1)();await pending;
+  assert.match(f.els.exportResult.children[1].download,/\.(mp4|webm)$/);assert.equal(Number(f.els.timeline.value),12);assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
+ await run('声なし途中プレビューも経過実時間を再開位置に加える',async()=>{
+  const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.els.timeline.value='2';f.state.demoClock=50000;
+  const pending=f.els.play.onclick();await tick();await tick();f.state.clock=1000;f.state.demoClock=51000;f.els.sourceVideo.currentTime=3;await f.state.frames.at(-1)();
+  assert.equal(Number(f.els.timeline.value),3);assert.equal(f.state.scheduled.length,0);f.els.cancel.onclick();await pending;assert.equal(f.els.editable.disabled,false);
+ });
  console.log(count+' simulated media controller tests passed; browser acceptance remains unverified.');
 })().catch(e=>{console.error(e);process.exitCode=1});
