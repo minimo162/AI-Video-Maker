@@ -4,7 +4,7 @@ const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),
 const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
 const tick=()=>new Promise(r=>setImmediate(r));
 function fixture(){
- const state={scheduled:[],recorders:[],tracks:[],frames:[],drawn:[],videos:[],clock:0,resumeGate:null,streamError:false,rejectSource:false,probeFail:false,probeDecodeFail:false,startFail:false,securityFail:false,probeDelay:null,demoClock:0,downloads:[],fills:[]};
+ const state={scheduled:[],silentClocks:[],recorders:[],tracks:[],frames:[],drawn:[],videos:[],clock:0,resumeGate:null,streamError:false,rejectSource:false,probeFail:false,probeDecodeFail:false,startFail:false,securityFail:false,probeDelay:null,demoClock:0,downloads:[],fills:[]};
  class E {
   constructor(tag='div'){this.tagName=tag;this.children=[];this.dataset={};this.value='';this.files=[];this.listeners={};this.width=1920;this.height=1080;this.readyState=4;this.duration=12;this.videoWidth=1280;this.videoHeight=720;this.paused=true;this._time=0;if(tag==='video')state.videos.push(this)}
   append(...es){this.children.push(...es)}replaceChildren(...es){this.children=[...es]}setAttribute(k,v){this[k]=v}removeAttribute(k){delete this[k]}focus(){}select(){}click(){if(this.tagName==='a')state.downloads.push(this);return this.onclick?.()}load(){queueMicrotask(()=>{this.emit('loadedmetadata');this.emit('loadeddata')})}pause(){this.paused=true}play(){this.paused=false;if(this._src?.startsWith('blob:probe'))this._time=.1;return Promise.resolve()}
@@ -15,6 +15,7 @@ function fixture(){
  }
  class Stream {constructor(tracks){this.tracks=tracks}getTracks(){return this.tracks}getVideoTracks(){return this.tracks.filter(t=>t.kind==='video')}getAudioTracks(){return this.tracks.filter(t=>t.kind==='audio')}}
  class AC {constructor(){this.state='running';this.sampleRate=8000;this.destination={}}get currentTime(){return state.clock}resume(){return state.resumeGate??Promise.resolve()}decodeAudioData(){return Promise.resolve({duration:2})}close(){}createBuffer(channels,length,rate){const data=new Float32Array(length);return {duration:length/rate,sampleRate:rate,getChannelData:()=>data}}createOscillator(){return {frequency:{value:0},connect(){},start(){},stop(){},disconnect(){}}}createBufferSource(){const n={connect(){},start(...args){this.startArgs=args;state.scheduled.push(this)},stop(){this.stopped=true}};return n}createMediaStreamDestination(){const t={kind:'audio',stopped:false,stop(){this.stopped=true}};state.tracks.push(t);return {stream:new Stream([t]),disconnect(){}}}}
+ AC.prototype.createConstantSource=function(){const n={offset:{value:1},connect(dest){this.destination=dest},start(){this.started=true},stop(){this.stopped=true},disconnect(){this.disconnected=true}};state.silentClocks.push(n);return n};
  class Recorder {constructor(stream,options){this.state='inactive';this.stream=stream;this.mimeType=options.mimeType;this.probe=stream.getTracks().some(t=>t.probe);state.recorders.push(this)}static isTypeSupported(){return true}start(timeslice){if(timeslice)this.probe=false;if((this.probe&&state.probeFail&&(state.probeFail==='all'||this.mimeType.includes('mp4')))||(!this.probe&&state.startFail&&this.mimeType.includes('mp4'))){const e=Error('synthetic start failure');if(state.securityFail)e.name='SecurityError';throw e}this.state='recording';this.started=true}stop(){this.state='inactive';queueMicrotask(()=>{if(this.probe)this.ondataavailable?.({data:new Blob(['probe'])});this.onstop?.()})}}
  const els={};for(const m of html.matchAll(/id="([^"]+)"/g))els[m[1]]=new E();
  els.quality.value='1080';els.format.value='auto';els.target.value='60';els.timeline.value='0';
@@ -93,6 +94,18 @@ function fixture(){
   const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.els.timeline.value='2';f.state.demoClock=50000;
   const pending=f.els.play.onclick();await tick();await tick();f.state.clock=1000;f.state.demoClock=51000;f.els.sourceVideo.currentTime=3;await f.state.frames.at(-1)();
   assert.equal(Number(f.els.timeline.value),3);assert.equal(f.state.scheduled.length,0);f.els.cancel.onclick();await pending;assert.equal(f.els.editable.disabled,false);
+ });
+ await run('声なし記録はゼロ値の音声時計を持ち取消・再試行で解放する',async()=>{
+  const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();
+  for(let i=0;i<2;i++){const pending=f.els.export.onclick();await tick();await tick();const clock=f.state.silentClocks.at(-1);
+   assert.equal(clock.offset.value,0);assert.equal(clock.started,true);assert.equal(clock.stopped,undefined);assert.ok(clock.destination.stream.getAudioTracks().length);assert.equal(f.state.scheduled.length,0);
+   f.els.cancel.onclick();await pending;assert.equal(clock.stopped,true);assert.equal(clock.disconnected,true);assert.ok(f.state.tracks.every(t=>t.stopped));assert.equal(f.els.exportResult.children.length,0);
+  }assert.equal(f.state.silentClocks.length,2);
+ });
+ await run('声なしMP4失敗後も無音の時計を破棄してWebMへ切り替える',async()=>{
+  const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.state.startFail=true;
+  const pending=f.els.export.onclick();await tick();await tick();assert.equal(f.state.silentClocks.length,2);assert.equal(f.state.silentClocks[0].stopped,true);assert.equal(f.state.silentClocks[0].disconnected,true);assert.equal(f.state.silentClocks[1].stopped,undefined);
+  assert.match(f.state.recorders.filter(r=>!r.probe).at(-1).mimeType,/webm/);f.els.cancel.onclick();await pending;assert.ok(f.state.silentClocks.every(n=>n.stopped&&n.disconnected));assert.equal(f.state.scheduled.length,0);
  });
  console.log(count+' simulated media controller tests passed; browser acceptance remains unverified.');
 })().catch(e=>{console.error(e);process.exitCode=1});
