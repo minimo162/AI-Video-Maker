@@ -186,7 +186,7 @@ if(require.main===module)(async()=>{
   const count=f.state.confirmationCount;await f.file('audioFiles',[f.wav('s001.wav')]);assert.equal(f.state.confirmationCount,count+1);assert.match(f.E.audioList.children[0].children[1].textContent,/再生成必要/);assert.match(f.E.exportErrors.textContent,/s001：ナレーション/);
  });
  async function beginner(single=false){
-  const f=fixture();await f.source();f.E.startFirstVideo.click();f.E.purpose.value='申請の検索から登録まで説明したい';f.E.purpose.onchange();f.step(2);
+  const f=fixture();await f.source();f.E.startFirstVideo.click();f.E.purpose.value='申請の検索から登録まで説明したい';f.E.purpose.onchange();f.step(2);await f.E.copyPrompt.click();
   if(single){const p=f.saved();p.scenes=p.scenes.slice(0,1);f.E.proposal.value=JSON.stringify(p);await f.E.applyProposal.click()}else await f.apply();
   return f;
  }
