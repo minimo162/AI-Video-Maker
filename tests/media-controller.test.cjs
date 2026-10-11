@@ -3,8 +3,9 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8');
 const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
 const tick=()=>new Promise(r=>setImmediate(r));
+async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await new Promise(r=>setTimeout(r,5))}assert.fail('condition did not settle')}
 function fixture(){
- const state={scheduled:[],silentClocks:[],recorders:[],tracks:[],frames:[],drawn:[],videos:[],clock:0,resumeGate:null,streamError:false,rejectSource:false,probeFail:false,probeDecodeFail:false,startFail:false,securityFail:false,probeDelay:null,demoClock:0,downloads:[],fills:[]};
+ const state={scheduled:[],silentClocks:[],recorders:[],tracks:[],frames:[],drawn:[],videos:[],clock:0,resumeGate:null,missingStop:false,fastRecorderTimeout:false,contexts:[],windowListeners:{},streamError:false,rejectSource:false,probeFail:false,probeDecodeFail:false,startFail:false,securityFail:false,probeDelay:null,demoClock:0,downloads:[],fills:[]};
  class E {
   constructor(tag='div'){this.tagName=tag;this.children=[];this.dataset={};this.value='';this.files=[];this.listeners={};this.width=1920;this.height=1080;this.readyState=4;this.duration=12;this.videoWidth=1280;this.videoHeight=720;this.paused=true;this._time=0;if(tag==='video')state.videos.push(this)}
   append(...es){this.children.push(...es)}replaceChildren(...es){this.children=[...es]}setAttribute(k,v){this[k]=v}removeAttribute(k){delete this[k]}focus(){}select(){}click(){if(this.tagName==='a')state.downloads.push(this);return this.onclick?.()}load(){queueMicrotask(()=>{this.emit('loadedmetadata');this.emit('loadeddata')})}pause(){this.paused=true}play(){this.paused=false;if(this._src?.startsWith('blob:probe'))this._time=.1;return Promise.resolve()}
@@ -14,13 +15,13 @@ function fixture(){
   captureStream(){if(state.streamError)throw Error('captureStream failed');const t={kind:'video',probe:this!==els.preview,stopped:false,stop(){this.stopped=true}};state.tracks.push(t);return new Stream([t])}
  }
  class Stream {constructor(tracks){this.tracks=tracks}getTracks(){return this.tracks}getVideoTracks(){return this.tracks.filter(t=>t.kind==='video')}getAudioTracks(){return this.tracks.filter(t=>t.kind==='audio')}}
- class AC {constructor(){this.state='running';this.sampleRate=8000;this.destination={}}get currentTime(){return state.clock}resume(){return state.resumeGate??Promise.resolve()}decodeAudioData(){return Promise.resolve({duration:2})}close(){}createBuffer(channels,length,rate){const data=new Float32Array(length);return {duration:length/rate,sampleRate:rate,getChannelData:()=>data}}createOscillator(){return {frequency:{value:0},connect(){},start(){},stop(){},disconnect(){}}}createBufferSource(){const n={connect(){},start(...args){this.startArgs=args;state.scheduled.push(this)},stop(){this.stopped=true}};return n}createMediaStreamDestination(){const t={kind:'audio',stopped:false,stop(){this.stopped=true}};state.tracks.push(t);return {stream:new Stream([t]),disconnect(){}}}}
+ class AC {constructor(){this.state='running';this.sampleRate=8000;this.destination={};state.contexts.push(this)}get currentTime(){return state.clock}resume(){return state.resumeGate??Promise.resolve()}decodeAudioData(){return Promise.resolve({duration:2})}close(){this.state='closed';return Promise.resolve()}createBuffer(channels,length,rate){const data=new Float32Array(length);return {duration:length/rate,sampleRate:rate,getChannelData:()=>data}}createOscillator(){return {frequency:{value:0},connect(){},start(){},stop(){},disconnect(){}}}createBufferSource(){const n={connect(){},start(...args){this.startArgs=args;state.scheduled.push(this)},stop(){this.stopped=true}};return n}createMediaStreamDestination(){const t={kind:'audio',stopped:false,stop(){this.stopped=true}};state.tracks.push(t);return {stream:new Stream([t]),disconnect(){}}}}
  AC.prototype.createConstantSource=function(){const n={offset:{value:1},connect(dest){this.destination=dest},start(){this.started=true},stop(){this.stopped=true},disconnect(){this.disconnected=true}};state.silentClocks.push(n);return n};
- class Recorder {constructor(stream,options){this.state='inactive';this.stream=stream;this.mimeType=options.mimeType;this.probe=stream.getTracks().some(t=>t.probe);state.recorders.push(this)}static isTypeSupported(){return true}start(timeslice){if(timeslice)this.probe=false;if((this.probe&&state.probeFail&&(state.probeFail==='all'||this.mimeType.includes('mp4')))||(!this.probe&&state.startFail&&this.mimeType.includes('mp4'))){const e=Error('synthetic start failure');if(state.securityFail)e.name='SecurityError';throw e}this.state='recording';this.started=true}stop(){this.state='inactive';queueMicrotask(()=>{if(this.probe)this.ondataavailable?.({data:new Blob(['probe'])});this.onstop?.()})}}
+ class Recorder {constructor(stream,options){this.state='inactive';this.stream=stream;this.mimeType=options.mimeType;this.probe=stream.getTracks().some(t=>t.probe);state.recorders.push(this)}static isTypeSupported(){return true}start(timeslice){if(timeslice)this.probe=false;if((this.probe&&state.probeFail&&(state.probeFail==='all'||this.mimeType.includes('mp4')))||(!this.probe&&state.startFail&&this.mimeType.includes('mp4'))){const e=Error('synthetic start failure');if(state.securityFail)e.name='SecurityError';throw e}this.state='recording';this.started=true}stop(){this.state='inactive';if(this.mimeType.includes('mp4')&&(state.missingStop==='all'||state.missingStop===(this.probe?'probe':'actual')))return;queueMicrotask(()=>{if(this.probe)this.ondataavailable?.({data:new Blob(['probe'])});this.onstop?.()})}}
  const els={};for(const m of html.matchAll(/id="([^"]+)"/g))els[m[1]]=new E();
  els.quality.value='1080';els.format.value='auto';els.target.value='60';els.timeline.value='0';
  const listeners={};const doc={getElementById:id=>els[id],createElement:tag=>new E(tag),querySelectorAll:()=>[],fonts:{ready:Promise.resolve()},addEventListener:(k,f)=>listeners[k]=f,hidden:false};
- const sandbox={document:doc,window:{AudioContext:AC,MediaRecorder:Recorder,addEventListener(){}},navigator:{},confirm:()=>true,URL:{createObjectURL:blob=>blob instanceof Blob&&blob.size===5?'blob:probe:'+blob.type:'blob:synthetic',revokeObjectURL(){}},Blob,File:require('node:buffer').File,performance:{now:()=>state.demoClock},TextDecoder,MediaStream:Stream,MediaRecorder:Recorder,HTMLCanvasElement:E,console,queueMicrotask,setTimeout:(fn,ms)=>ms===60000?0:ms===80&&state.probeDelay?(state.probeDelay(fn),0):ms===80||ms===100?(queueMicrotask(fn),0):setTimeout(fn,ms),clearTimeout,requestAnimationFrame:f=>{state.frames.push(f);return state.frames.length},cancelAnimationFrame(){},module:{exports:{}}};
+ const sandbox={document:doc,window:{AudioContext:AC,MediaRecorder:Recorder,addEventListener:(k,f)=>state.windowListeners[k]=f},navigator:{},confirm:()=>true,URL:{createObjectURL:blob=>blob instanceof Blob&&blob.size===5?'blob:probe:'+blob.type:'blob:synthetic',revokeObjectURL(){}},Blob,File:require('node:buffer').File,performance:{now:()=>state.demoClock},TextDecoder,MediaStream:Stream,MediaRecorder:Recorder,HTMLCanvasElement:E,console,queueMicrotask,setTimeout:(fn,ms)=>ms===5000&&state.fastRecorderTimeout?setTimeout(fn,5):ms===60000?0:ms===80&&state.probeDelay?(state.probeDelay(fn),0):ms===80||ms===100?(queueMicrotask(fn),0):setTimeout(fn,ms),clearTimeout,requestAnimationFrame:f=>{state.frames.push(f);return state.frames.length},cancelAnimationFrame(){},module:{exports:{}}};
  vm.createContext(sandbox);scripts.forEach(s=>vm.runInContext(s,sandbox));
  async function file(id,files){els[id].files=files;await els[id].onchange()}
  async function ready(){await file('sourceFile',[{name:'synthetic.mp4',size:100,lastModified:0}]);els.proposal.value=JSON.stringify({schemaVersion:1,title:'試験',scenes:[{id:'s001',sourceIn:0,sourceOut:6,narration:'説明1',caption:'要点1',captionPosition:'bottom',regionId:'',effect:'none'},{id:'s002',sourceIn:6,sourceOut:12,narration:'説明2',caption:'要点2',captionPosition:'bottom',regionId:'',effect:'none'}],questions:[]});await els.applyProposal.onclick();const bytes=new Uint8Array(44);bytes.set(Buffer.from('RIFF'));bytes.set(Buffer.from('WAVE'),8);await file('audioFiles',['s001','s002'].map(id=>({name:id+'.wav',arrayBuffer:async()=>bytes.buffer})));els.credits.value='合成音';els.credits.onchange()}
@@ -120,6 +121,109 @@ function fixture(){
   v.requestVideoFrameCallback=()=>1;v.cancelVideoFrameCallback=()=>{cancelled=true};
   const pending=f.els.export.onclick();await tick();await tick();f.state.clock=1.1;v.currentTime=1.1;await f.state.frames.at(-1)();await pending;
   assert.match(f.els.status.textContent,/映像デコードが停止/);assert.equal(f.els.exportResult.children.length,0);assert.equal(cancelled,true);assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
+ await run('音声予約の途中失敗で既に予約した音声を停止し再試行できる',async()=>{
+  for(const action of ['play','export']){
+  const f=fixture();await f.ready();
+  // The first scene starts successfully; scheduling the second fails.
+  const originalPush=f.state.scheduled.push;let attempts=0;
+  f.state.scheduled.push=function(node){if(++attempts===2)throw Error('audio start failed');return originalPush.call(this,node)};
+  await f.els[action].onclick();assert.match(f.els.status.textContent,/audio start failed/);
+  assert.ok(f.state.scheduled.every(n=>n.stopped));assert.equal(f.els.editable.disabled,false);
+  f.state.scheduled.push=originalPush;const retry=f.els[action].onclick();await tick();await tick();
+  assert.equal(f.state.scheduled.filter(n=>!n.stopped).length,2);f.els.cancel.onclick();await retry;
+  assert.ok(f.state.tracks.every(t=>t.stopped));assert.equal(f.els.exportResult.children.length,0);
+  }
+ });
+ await run('場面末尾より早いendedを静止画延長として成功扱いしない',async()=>{
+  const f=fixture();await f.ready();const pending=f.els.export.onclick();await tick();await tick();
+  f.state.clock=1;f.els.sourceVideo.currentTime=1;f.els.sourceVideo.ended=true;
+  await f.state.frames.at(-1)();
+  // A failed frame must release the operation, without waiting for the rest of the timeline.
+  await tick();assert.equal(f.els.editable.disabled,false);await pending;
+  assert.match(f.els.status.textContent,/映像.*終了/);assert.equal(f.els.exportResult.children.length,0);
+  assert.ok(f.state.scheduled.every(n=>n.stopped));assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
+ await run('音声resumeが未完了のままでも取消でロック解除し再実行できる',async()=>{
+  for(const action of ['play','export']){
+   const f=fixture();await f.ready();let resume;f.state.resumeGate=new Promise(r=>resume=r);
+   const pending=f.els[action].onclick();await tick();f.els.cancel.onclick();await tick();await tick();
+   assert.equal(f.els.editable.disabled,false);await pending;assert.equal(f.state.scheduled.length,0);
+   assert.equal(f.els.status.className,'warning');assert.doesNotMatch(f.els.status.textContent,/音声を準備できません/);
+   f.state.resumeGate=null;const retry=f.els[action].onclick();await tick();await tick();
+   assert.equal(f.state.scheduled.filter(n=>!n.stopped).length,2);
+   resume();await tick();assert.equal(f.state.scheduled.filter(n=>!n.stopped).length,2);
+   assert.equal(f.els.editable.disabled,true);f.els.cancel.onclick();await retry;
+   assert.ok(f.state.scheduled.every(n=>n.stopped));assert.ok(f.state.tracks.every(t=>t.stopped));
+  }
+ });
+ await run('映像の正しい末尾のendedは正常に次場面へ進める',async()=>{
+  const f=fixture();await f.ready();const pending=f.els.export.onclick();await tick();await tick();
+  const recorder=f.state.recorders.find(r=>!r.probe);recorder.ondataavailable({data:new Blob(['synthetic output'])});
+  f.state.clock=5.99;f.els.sourceVideo.currentTime=5.99;f.els.sourceVideo.ended=true;await f.state.frames.at(-1)();
+  assert.equal(recorder.state,'recording');f.state.clock=6.1;f.state.videos[0].currentTime=6.1;await f.state.frames.at(-1)();
+  f.state.clock=12;f.state.videos[0].currentTime=11.99;f.state.videos[0].ended=true;await f.state.frames.at(-1)();await pending;
+  assert.match(f.els.exportResult.children[1].download,/\.(mp4|webm)$/);assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
+ await run('MP4停止通知欠落後も部分出力を破棄してWebMの本番記録を完了する',async()=>{
+  const f=fixture();await f.ready();f.state.missingStop='actual';f.state.fastRecorderTimeout=true;
+  const pending=f.els.export.onclick();await tick();await tick();
+  f.state.clock=12;f.state.videos[0].currentTime=11.99;await f.state.frames.at(-1)();
+  await until(()=>f.state.recorders.some(r=>!r.probe&&r.mimeType.includes('webm'))||!f.els.editable.disabled);
+  const next=f.state.recorders.find(r=>!r.probe&&r.mimeType.includes('webm'));assert.ok(next,'WebM fallback did not start');
+  await tick();await tick();assert.ok(f.state.recorders.find(r=>!r.probe&&r.mimeType.includes('mp4')).stream.getTracks().every(t=>t.stopped));
+  next.ondataavailable({data:new Blob(['webm output'])});f.state.clock=24;f.state.videos[0].currentTime=11.99;await f.state.frames.at(-1)();await pending;
+  assert.match(f.els.exportResult.children[1].download,/\.webm$/);assert.equal(f.state.downloads.length,1);assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
+ await run('形式試験のMP4停止通知欠落は次の候補へ進む',async()=>{
+  const f=fixture();await f.ready();f.state.missingStop='probe';f.state.fastRecorderTimeout=true;
+  const pending=f.els.export.onclick();await until(()=>f.state.recorders.some(r=>!r.probe)||!f.els.editable.disabled);
+  const actual=f.state.recorders.find(r=>!r.probe);assert.ok(actual,'codec qualification stopped before fallback');assert.match(actual.mimeType,/webm/);
+  f.els.cancel.onclick();await pending;assert.ok(f.state.tracks.every(t=>t.stopped));assert.equal(f.state.downloads.length,0);
+ });
+ await run('pagehideは声あり・声なし記録を中断し履歴退避時だけ音声状態を保持する',async()=>{
+  for(const persisted of [false,true])for(const silent of [false,true]){
+   const f=fixture();await f.ready();if(silent){f.els.useNarration.checked=false;f.els.useNarration.onchange()}
+   const pending=f.els.export.onclick();await tick();await tick();const context=f.state.contexts[0],title=f.els.title.value;
+   f.state.windowListeners.pagehide({persisted});await pending;
+   assert.equal(context.state,persisted?'running':'closed');assert.equal(f.els.title.value,title);
+   assert.equal(f.state.downloads.length,0);assert.ok(f.state.tracks.every(t=>t.stopped));assert.ok(f.state.scheduled.every(n=>n.stopped));
+   assert.ok(f.state.silentClocks.every(n=>n.stopped&&n.disconnected));assert.equal(f.els.editable.disabled,false);
+   if(persisted){const retry=f.els.export.onclick();await tick();await tick();assert.equal(f.state.recorders.filter(r=>!r.probe).length,2);f.els.cancel.onclick();await retry}
+  }
+ });
+ await run('pagehideが音声準備中・形式試験中に起きても保存や再試行を開始しない',async()=>{
+  for(const persisted of [false,true])for(const phase of ['resume','probe']){
+   const f=fixture();await f.ready();let release;if(phase==='resume')f.state.resumeGate=new Promise(r=>release=r);else f.state.probeDelay=fn=>release=fn;
+   const pending=f.els.export.onclick();await tick();f.state.windowListeners.pagehide({persisted});release();await pending;
+   assert.equal(f.state.recorders.filter(r=>!r.probe).length,0);assert.equal(f.state.downloads.length,0);assert.ok(f.state.tracks.every(t=>t.stopped));assert.equal(f.els.editable.disabled,false);
+  }
+ });
+ await run('停止通知欠落の後始末でもアクセス拒否を別形式で再試行しない',async()=>{
+  const f=fixture();await f.ready();f.state.missingStop='actual';f.state.fastRecorderTimeout=true;
+  const pending=f.els.export.onclick();await tick();await tick();const actual=f.state.recorders.find(r=>!r.probe);
+  const denied=Error('runtime access denied');denied.name='SecurityError';actual.onerror({error:denied});await pending;
+  assert.equal(f.state.recorders.filter(r=>!r.probe).length,1);assert.match(f.els.status.textContent,/runtime access denied/);
+  assert.ok(f.state.tracks.every(t=>t.stopped));assert.equal(f.state.downloads.length,0);assert.equal(actual.onstop,null);
+ });
+ await run('停止通知欠落でも取消は別形式へ進まず後始末後に再実行できる',async()=>{
+  const f=fixture();await f.ready();f.state.missingStop='actual';f.state.fastRecorderTimeout=true;
+  const pending=f.els.export.onclick();await tick();await tick();f.els.cancel.onclick();assert.equal(f.els.editable.disabled,true);await pending;
+  assert.equal(f.state.recorders.filter(r=>!r.probe).length,1);assert.equal(f.els.status.className,'warning');assert.equal(f.els.editable.disabled,false);
+  assert.ok(f.state.tracks.every(t=>t.stopped));assert.equal(f.state.downloads.length,0);
+  f.state.missingStop=false;const retry=f.els.export.onclick();await tick();await tick();assert.equal(f.state.recorders.filter(r=>!r.probe).length,2);
+  f.els.cancel.onclick();await retry;assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
+ await run('終了待ち中のアクセス拒否は停止タイムアウトより優先し形式を替えない',async()=>{
+  for(const name of ['SecurityError','NotAllowedError']){
+   const f=fixture();await f.ready();f.state.missingStop='actual';f.state.fastRecorderTimeout=true;
+   const pending=f.els.export.onclick();await tick();await tick();const actual=f.state.recorders.find(r=>!r.probe),stop=actual.stop.bind(actual);
+   actual.stop=()=>{stop();queueMicrotask(()=>{const error=Error('denied while finishing');error.name=name;actual.onerror?.({error})})};
+   f.state.clock=12;f.state.videos[0].currentTime=11.99;await f.state.frames.at(-1)();
+   await until(()=>f.state.recorders.filter(r=>!r.probe).length>1||!f.els.editable.disabled);
+   assert.equal(f.state.recorders.filter(r=>!r.probe).length,1);await pending;
+   assert.match(f.els.status.textContent,/denied while finishing/);assert.equal(f.state.downloads.length,0);assert.ok(f.state.tracks.every(t=>t.stopped));
+  }
  });
  console.log(count+' simulated media controller tests passed; browser acceptance remains unverified.');
 })().catch(e=>{console.error(e);process.exitCode=1});

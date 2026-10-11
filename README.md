@@ -85,9 +85,9 @@ UIは端末にある **BIZ UDPゴシック**（CSS名：BIZ UDPGothic）を優�
     node tests/readability.test.cjs
     node tests/navigation.test.cjs
 
-2026-10-11、mainの `46deb61` を基準に再実行し、コア20項目・編集ハンドラー21項目・再生／書出し制御41項目・工程UI107項目・文字表示の静的検査11項目・下部導線29項目、計229項目が通過しました（インラインスクリプト2本の構文検査は別枠）。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
+コア20項目・編集ハンドラー21項目・再生／書出し制御52項目・工程UI107項目・文字表示の静的検査11項目・工程移動29項目、計240項目を検証しました。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
 
-PR #3にはWindows VMのEdge／file://で字幕のみのMP4とテストWAV付き出力を確認した報告があります。実Copilot・VOICEVOX、物理PC・社内PC、90秒の音声同期は未検証です。今回の再実行はNode.jsテストのみで、ブラウザーでの追試は行っていません。
+PR #3のWindows VM／Edge検証報告と今回の利用者による実Copilot・VOICEVOXの短尺MP4確認は、[検証記録](VALIDATION.md)に区別して記載しています。90秒の同期、実UIのcancel→retry、社内PCは引き続き未検証です。
 
 prototype.html は実機用の最小12秒診断です。アプリ本体の素材読込・同期の合格を示すものではありません。
 
