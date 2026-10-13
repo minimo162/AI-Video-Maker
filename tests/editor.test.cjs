@@ -12,7 +12,7 @@ class Element {
 }
 const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8'),scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]),elements={};
 for(const m of html.matchAll(/id="([^"]+)"/g))elements[m[1]]=new Element();
-elements.quality.value='1080';elements.format.value='auto';elements.target.value='60';elements.timeline.value='0';
+elements.quality.value='1080';elements.format.value='auto';elements.timeline.value='0';
 const nav=[1,2,3,4].map(n=>{const e=new Element('button');e.dataset.step=String(n);return e}),nudges=[];
 const document={getElementById:id=>elements[id],createElement:tag=>new Element(tag),querySelectorAll:s=>s==='[data-step]'?nav:nudges,fonts:{ready:Promise.resolve()},addEventListener(){},hidden:false};
 class AC {constructor(){this.state='running';this.sampleRate=44100;this.currentTime=0;this.destination={}}resume(){return Promise.resolve()}decodeAudioData(){return Promise.resolve({duration:2})}close(){}createBufferSource(){return {connect(){},start(){},stop(){}}}}
