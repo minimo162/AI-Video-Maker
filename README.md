@@ -87,8 +87,9 @@ UIは端末にある **BIZ UDPゴシック**（CSS名：BIZ UDPGothic）を優�
     node tests/workflow.test.cjs
     node tests/readability.test.cjs
     node tests/navigation.test.cjs
+    node tests/detail-pass.test.cjs
 
-コア20項目・編集ハンドラー21項目・再生／書出し制御52項目・工程UI107項目・文字表示の静的検査11項目・工程移動29項目、計240項目を検証しました。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
+コア31項目・編集ハンドラー21項目・再生／書出し制御63項目・工程UI117項目・文字表示の静的検査11項目・工程移動29項目・詳細画像8項目、計280項目を検証しました。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
 
 PR #3のWindows VM／Edge検証報告と今回の利用者による実Copilot・VOICEVOXの短尺MP4確認は、[検証記録](VALIDATION.md)に区別して記載しています。90秒の同期、実UIのcancel→retry、社内PCは引き続き未検証です。
 
