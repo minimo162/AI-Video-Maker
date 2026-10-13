@@ -87,21 +87,43 @@ function fixture(){
   assert.match(f.els.exportResult.children[1].download,/\.(mp4|webm)$/);assert.doesNotMatch(f.els.status.textContent,/同期が崩れ/);assert.ok(f.state.tracks.every(t=>t.stopped));assert.ok(f.state.scheduled.every(n=>n.stopped));
  });
  await run('声なしプレビューは保持したWAVをスケジュールしない',async()=>{const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();const pending=f.els.play.onclick();await tick();await tick();assert.equal(f.state.scheduled.length,0);f.els.cancel.onclick();await pending;assert.equal(f.els.editable.disabled,false)});
- await run('声なし書き出しは音声クロックではなく実時間で場面と終了を進める',async()=>{
+ await run('声なし書き出しは元映像の再生位置で場面と終了を進める',async()=>{
   const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.state.demoClock=50000;
   const pending=f.els.export.onclick();await tick();await tick();const recorder=f.state.recorders.find(r=>!r.probe);assert.ok(recorder.started);
   f.state.clock=1000;f.state.demoClock=51000;f.els.sourceVideo.currentTime=1;await f.state.frames.at(-1)();
   assert.equal(recorder.state,'recording');assert.equal(Number(f.els.timeline.value),1);assert.equal(f.state.scheduled.length,0);
   f.state.demoClock=56100;f.els.sourceVideo.currentTime=5.99;f.state.videos[0].currentTime=6.1;await f.state.frames.at(-1)();
-  assert.equal(recorder.state,'recording');assert.ok(Math.abs(Number(f.els.timeline.value)-6.1)<.00001);
+  assert.equal(recorder.state,'recording');assert.ok(Math.abs(Number(f.els.timeline.value)-6)<.00001);
   recorder.ondataavailable({data:new Blob(['synthetic output'])});f.state.demoClock=62000;f.state.videos[0].currentTime=11.99;await f.state.frames.at(-1)();await pending;
   assert.match(f.els.exportResult.children[1].download,/\.(mp4|webm)$/);assert.equal(Number(f.els.timeline.value),12);assert.ok(f.state.tracks.every(t=>t.stopped));
  });
- await run('声なし途中プレビューも経過実時間を再開位置に加える',async()=>{
+ await run('声なし途中プレビューも元映像の再生位置に追従する',async()=>{
   const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.els.timeline.value='2';f.state.demoClock=50000;
   const pending=f.els.play.onclick();await tick();await tick();f.state.clock=1000;f.state.demoClock=51000;f.els.sourceVideo.currentTime=3;await f.state.frames.at(-1)();
   assert.equal(Number(f.els.timeline.value),3);assert.equal(f.state.scheduled.length,0);f.els.cancel.onclick();await pending;assert.equal(f.els.editable.disabled,false);
  });
+ await run('声なしは0.35秒超の時計差でも書き出しを続け場面を飛ばさない',async()=>{
+  const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();
+  const pending=f.els.export.onclick();await tick();await tick();const rec=f.state.recorders.find(r=>!r.probe);
+  f.state.demoClock=1000;f.els.sourceVideo.currentTime=.2;await f.state.frames.at(-1)();
+  assert.equal(rec.state,'recording');assert.equal(Number(f.els.timeline.value),.2);assert.equal(f.state.scheduled.length,0);
+  f.state.demoClock=15000;f.els.sourceVideo.currentTime=5.99;await f.state.frames.at(-1)();
+  assert.equal(rec.state,'recording');assert.equal(Number(f.els.timeline.value),6);assert.equal(f.state.videos[0].paused,false);
+  f.state.demoClock=16000;f.state.videos[0].currentTime=6.2;await f.state.frames.at(-1)();assert.equal(Number(f.els.timeline.value),6.2);
+  rec.ondataavailable({data:new Blob(['subtitle output'])});f.state.demoClock=22000;f.state.videos[0].currentTime=11.99;await f.state.frames.at(-1)();await pending;
+  assert.equal(Number(f.els.timeline.value),12);assert.match(f.els.exportResult.children[1].download,/mp4$/);assert.doesNotMatch(f.els.status.textContent,/同期が崩れ/);assert.ok(f.state.tracks.every(t=>t.stopped));
+ });
+ await run('声なしでも映像の停止と早すぎる終了はダウンロードを止める',async()=>{
+  for(const failure of ['stalled','ended','error']){const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();const pending=f.els.export.onclick();await tick();await tick();
+   if(failure==='stalled')f.state.demoClock=1100;
+   if(failure==='ended'){f.els.sourceVideo.currentTime=1;f.els.sourceVideo.ended=true}
+   if(failure==='error')f.els.sourceVideo.error={code:3};
+   await f.state.frames.at(-1)();await pending;assert.equal(f.state.downloads.length,0);assert.match(f.els.status.textContent,/映像デコードが停止|場面の途中|映像を読み取れません/);assert.ok(f.state.tracks.every(t=>t.stopped));
+  }
+ });
+ await run('声ありでは0.35秒超の同期ずれを引き続き拒否する',async()=>{const f=fixture();await f.ready();const pending=f.els.export.onclick();await tick();await tick();f.state.clock=1;f.els.sourceVideo.currentTime=.2;await f.state.frames.at(-1)();await pending;assert.match(f.els.status.textContent,/映像と音声の同期/);assert.equal(f.state.downloads.length,0)});
+ await run('声なしの途中再生は切り出し元の開始時刻を差し引く',async()=>{const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.els.timeline.value='8';const pending=f.els.play.onclick();await tick();await tick();assert.equal(f.els.sourceVideo.currentTime,8);f.state.demoClock=10000;f.els.sourceVideo.currentTime=8.3;await f.state.frames.at(-1)();assert.equal(Number(f.els.timeline.value),8.3);f.els.cancel.onclick();await pending});
+ await run('声なしの短い場面は末尾静止を含めて終了し静止部分からも再開できる',async()=>{for(const start of [0,.25]){const f=fixture();await f.file('sourceFile',[{name:'short.mp4',size:100,lastModified:0}]);f.els.proposal.value=JSON.stringify({schemaVersion:1,title:'short',scenes:[{id:'s001',sourceIn:0,sourceOut:.2,narration:'',caption:'字幕',captionPosition:'bottom',regionId:'',effect:'none'}],questions:[]});await f.els.applyProposal.onclick();f.els.useNarration.checked=false;f.els.useNarration.onchange();f.els.timeline.value=String(start);const pending=f.els.play.onclick();await tick();await tick();if(start===0){f.els.sourceVideo.currentTime=.199;f.state.demoClock=200;await f.state.frames.at(-1)();assert.equal(Number(f.els.timeline.value),.2)}f.state.demoClock=500;await f.state.frames.at(-1)();await pending;assert.equal(Number(f.els.timeline.value),.4);assert.equal(f.els.editable.disabled,false)}});
  await run('声なし記録はゼロ値の音声時計を持ち取消・再試行で解放する',async()=>{
   const f=fixture();await f.ready();f.els.useNarration.checked=false;f.els.useNarration.onchange();
   for(let i=0;i<2;i++){const pending=f.els.export.onclick();await tick();await tick();const clock=f.state.silentClocks.at(-1);
