@@ -65,6 +65,7 @@ video,canvas{width:100%;display:block;background:var(--media);border-radius:var(
     <div id="sampleEntry" class="sample-entry"><span>まだ録画がないときは</span><button id="demo">12秒の練習用で試す</button><p class="hint">声の代わりにテスト音を使います。録画や音声を用意せずに、約12秒の準備で動画保存まで試せます。</p></div>
     <div id="restoreOverview" class="restore-overview" hidden><strong>保存した場面は読み込めました</strong><p id="restoreChecklist"></p></div>
     <div id="sourceFeedback" class="context-feedback" role="status" aria-live="polite"></div><button id="confirmSource" hidden>使う範囲と注目箇所を確認した</button>
+    <details id="sourceDiagnostics" class="compact-details" hidden><summary>前回の読み込みエラーを見る</summary><p class="hint">再読み込み・タブを閉じるまで残ります。次のエラーで上書きされます。問い合わせ時にコピーできます。</p><label>エラーの詳細<textarea id="sourceErrorDetails" rows="8" readonly></textarea></label><button id="copySourceError" type="button">エラー詳細をコピー</button><p id="sourceErrorCopyStatus" role="status"></p></details>
     <section id="firstVideoEntry" class="notice" hidden aria-labelledby="firstVideoHeading"><h3 id="firstVideoHeading">Copilotと、自分の録画で1本作る</h3><p id="firstVideoLength"></p><p>録画 → Copilotが場面・字幕を下書き → 確認 → 動画を保存。原稿の自作やVOICEVOXは不要です。Copilotへの受け渡しは、画面の案内に沿って手動で行います。</p><button id="startFirstVideo" class="primary full-button">Copilotで字幕の下書きを作る</button><details class="compact-details"><summary>別の作り方を選ぶ</summary><div class="row"><button id="startCopilot">声付き動画を作る（原稿もCopilot）</button><button id="firstManualStart">自分で場面を分ける</button></div></details></section>
     <div id="sourceWorkspace" class="source-view" hidden><div id="sourceReturnBar" class="source-return" hidden><span id="sourceSceneContext"></span><button id="returnToComposition">構成の場面に戻る</button></div><details id="sourceTrimDetails" class="compact-details"><summary>使う範囲を細かく調整<span class="optional-tag">必要なとき</span></summary><p class="hint">元動画を見ながら、使う部分の開始・終了を指定します。</p><input id="sourceSeek" type="range" min="0" max="0" step=".1" value="0" aria-label="元動画位置"><div class="row"><button data-nudge="-1">−1秒</button><button data-nudge="-.1">−0.1秒</button><input id="sourceTime" type="number" step=".1" min="0" value="0" aria-label="元動画秒数"><button data-nudge=".1">＋0.1秒</button><button data-nudge="1">＋1秒</button></div><div id="sceneTrim" hidden><label>どの場面を変えますか？<select id="selectedScene"></select></label><div class="row"><button id="setIn">ここから使う</button><button id="setOut">ここまで使う</button></div></div></details></div>
    </div></div>
@@ -172,7 +173,7 @@ let project=Core.empty(),audios=new Map(),pending=[],history=[],sourceFile=null,
 let ac=null;const Audio=window.AudioContext||window.webkitAudioContext;
 if(typeof Audio!=='function'){$('startupNotice').className='error';$('startupTitle').textContent='この環境では編集を開始できません';$('startupMessage').textContent='音声処理の機能がありません。ZIPを展開し、取り出したindex.htmlをPCのMicrosoft Edgeで開いてください。会社の設定による制限は管理担当者へご確認ください。';return}
 let recordingAvailable=false;try{recordingAvailable=!!window.MediaRecorder&&typeof window.MediaRecorder.isTypeSupported==='function'&&typeof HTMLCanvasElement!=='undefined'&&!!HTMLCanvasElement.prototype.captureStream&&candidates().length>0}catch{}
-const audioResumeCancels=new Set();
+const audioResumeCancels=new Set(),sourceReadCancels=new Set();
 async function ensureAudio(){let cancelResume;try{if(!ac||ac.state==='closed')ac=new Audio();const cancelled=new Promise((_,reject)=>{cancelResume=()=>reject(Error('音声の準備を取り消しました'));audioResumeCancels.add(cancelResume)});await bounded(Promise.race([ac.resume(),cancelled]),10000,'音声の準備がタイムアウトしました。もう一度操作してください');return ac}catch(e){const failure=Error('音声を準備できませんでした。もう一度操作してください。続く場合はPCのMicrosoft Edgeで開き直し、制限がある場合は管理担当者へご確認ください。理由：'+e.message);failure.name=e.name||'Error';throw failure}finally{audioResumeCancels.delete(cancelResume)}}
 const note=(text,kind='notice')=>{if(text&&!guideActionPending&&!guideFilePending)clearGuideResult();$('status').className=kind;$('status').textContent=text;if(busy&&currentStep===4){$('previewStatus').textContent=text;$('previewProgress').value=$('progress').value}guideFeedback(text,kind,$('status'))};
 function clearGuideResult(){for(const id of ['guideFeedback','quickFeedback'])$(id).textContent='';guideFeedbackTarget=null}
@@ -218,7 +219,7 @@ function preparationHints(){
  $('storyboardStatus').textContent=pages?'代表画像 '+storyTimes.length+' 枚を、一覧PNG '+pages+' ファイルにまとめました。ダウンロード開始 '+started+' / '+pages+'。下の各リンクを押し、ブラウザーで保存結果を確認してください。':'生成後、表示される各リンクから一覧PNGを保存してください。生成だけでは端末に保存されません。';
  $('copilotPreparation').textContent=(missingPurpose?'動画の目的が未入力です。必要に応じて録画工程で入力してください。 ':'')+(pages?'一覧PNG '+pages+' ファイル中 '+started+' ファイルでダウンロードを開始しました。保存結果を確認してから、Copilotへ手動添付してください。':'この作業では代表画像が未生成です。録画工程で生成・保存するか、手元の代表画像を用意してください。');
 }
-function cancelCurrentOperation(reason=''){if(!busy||cancelRequested)return;cancelRequested=true;cancelReason=typeof reason==='string'&&reason?reason:operationKind==='preview'?'再生を停止しました。編集データは保持しています。':'処理を中止しました。編集データは保持しています。';operation++;for(const cancel of audioResumeCancels)cancel();stopPlayer();note(cancelReason+' 後始末が終わるまでお待ちください。','warning');updateWorkflow()}
+function cancelCurrentOperation(reason=''){if(!busy||cancelRequested)return;cancelRequested=true;cancelReason=typeof reason==='string'&&reason?reason:operationKind==='preview'?'再生を停止しました。編集データは保持しています。':'処理を中止しました。編集データは保持しています。';operation++;for(const cancel of audioResumeCancels)cancel();for(const cancel of sourceReadCancels)cancel();stopPlayer();note(cancelReason+' 後始末が終わるまでお待ちください。','warning');updateWorkflow()}
 
 const url=b=>{const u=URL.createObjectURL(b);downloadURLS.push(u);return u};
 function download(blob,name){const a=document.createElement('a'),u=url(blob);a.href=u;a.download=name;a.click();setTimeout(()=>{URL.revokeObjectURL(u);downloadURLS=downloadURLS.filter(x=>x!==u)},60000)}
@@ -360,23 +361,39 @@ async function waitEvent(target,event,timeout=10000){return new Promise((resolve
 // Register the frame callback before seeking: a callback added after 'seeked' often never fires for a paused video.
 function nextVideoFrame(v){if(!v.requestVideoFrameCallback)return null;const frame=new Promise((resolve,reject)=>{let id;const timer=setTimeout(()=>{v.cancelVideoFrameCallback(id);v.readyState>=2?resolve():reject(Error('映像フレームを取得できません'))},500);id=v.requestVideoFrameCallback(()=>{clearTimeout(timer);resolve()})});frame.catch(()=>{});return frame}
 async function seek(v,time){v.pause();const t=Math.max(0,Math.min(v.duration-.001,time));let frame=null;if(Math.abs(v.currentTime-t)>.001||v.readyState<2){const ready=waitEvent(v,'seeked');frame=nextVideoFrame(v);v.currentTime=t;await ready}if(v.readyState<2)await waitEvent(v,'loadeddata');if(frame)await frame}
+// Source reads have a longer deadline than playback/export and can be cancelled immediately.
+function waitSource(target,event,ready,start){return new Promise((resolve,reject)=>{
+ let settled=false;const cancel=()=>finish(Error('素材読み込みを取り消しました'));
+ const ok=()=>{if(ready())finish()},bad=()=>{const code=target.error?.code;finish(Error('動画を読み込めません。'+({1:'読み込みが中断されました。',2:'ファイルの読み取りに失敗しました。',3:'映像をデコードできません。',4:'動画形式またはコーデックが対応していません。'}[code]||'コーデックまたはファイルを確認してください。')+(code?' (MediaError '+code+')':'')))};
+ const timer=setTimeout(()=>finish(Error(event+'の準備が60秒以内に完了しませんでした。ファイルをPC内に保存して再度お試しください。')),60000);
+ function finish(error){if(settled)return;settled=true;clearTimeout(timer);target.removeEventListener(event,ok);target.removeEventListener('error',bad);sourceReadCancels.delete(cancel);error?reject(error):resolve()}
+ sourceReadCancels.add(cancel);target.addEventListener(event,ok);target.addEventListener('error',bad);
+ try{if(start)start();else if(target.error)bad();else ok()}catch(e){finish(e)}
+})}
+$('copySourceError').onclick=async()=>{const field=$('sourceErrorDetails');try{await navigator.clipboard.writeText(field.value);$('sourceErrorCopyStatus').textContent='コピーしました。'}catch(e){field.focus();field.select();$('sourceErrorCopyStatus').textContent='コピーできませんでした。選択した詳細を手動でコピーしてください。'}};
 async function loadSource(file,syntheticDuration,options={}){
- stopPlayer();const ownsBusy=!busy;if(ownsBusy)busySet(true,'source');const sourceToken=options.token??++operation,oldURL=sourceURL,previousConfirmed=sourceConfirmed;const candidate=URL.createObjectURL(file),probe=document.createElement('video');let committed=false;
+ stopPlayer();const ownsBusy=!busy;if(ownsBusy)busySet(true,'source');const sourceToken=options.token??++operation,oldURL=sourceURL,previousConfirmed=sourceConfirmed;const candidate=URL.createObjectURL(file),probe=document.createElement('video');let committed=false,stage='動画情報の取得';
+ const showStage=label=>{stage=label;feedback('sourceFeedback',label+'中です。大きな録画では時間がかかります（各段階最大60秒）。');note(label+'中です。')};
  const check=()=>{if(sourceToken!==operation)throw Error('素材読み込みを取り消しました')};
  try{
-  await ensureAudio();check();probe.muted=true;const loaded=waitEvent(probe,'loadedmetadata');probe.src=candidate;await loaded;check();
+  check();showStage('動画情報の取得');probe.muted=true;probe.preload='metadata';await waitSource(probe,'loadedmetadata',()=>probe.readyState>=1,()=>{probe.src=candidate});check();
   let duration=probe.duration;
-  if(!Number.isFinite(duration)&&duration===Infinity&&!Number.isFinite(syntheticDuration)){const end=waitEvent(probe,'seeked');probe.currentTime=1e9;await end;check();duration=probe.duration}
+  if(!Number.isFinite(duration)&&duration===Infinity&&!Number.isFinite(syntheticDuration)){showStage('動画の長さの確認');await waitSource(probe,'seeked',()=>true,()=>{probe.currentTime=1e9});check();duration=probe.duration}
   if(!Number.isFinite(duration)&&Number.isFinite(syntheticDuration))duration=syntheticDuration;
   if(options.minimumDuration&&duration<options.minimumDuration)throw Error('合成動画の長さが不足しています');if(!Number.isFinite(duration)||duration<=0)throw Error('動画長を確認できません。有限長のMP4素材を指定してください');
   const meta={name:file.name,size:file.size,lastModified:file.lastModified,duration,width:probe.videoWidth,height:probe.videoHeight},old=project.source;
   const matches=old&&['name','size','lastModified','width','height'].every(k=>old[k]===meta[k])&&Math.abs(old.duration-meta.duration)<.05;
   if(old&&!matches&&!options.approved&&!confirm('録画を「'+old.name+'」から「'+meta.name+'」へ差し替えます。場面と注目箇所は保持します。差し替え後に使う範囲を確認してください。'))return false;
-  check();for(const v of videos){v.pause();v.src=candidate;v.load()}await Promise.all(videos.map(v=>v.readyState>=1?Promise.resolve():waitEvent(v,'loadedmetadata')));check();await seek(videos[0],0);check();
+  if(!meta.width||!meta.height)throw Error('映像の解像度を確認できません。映像を含む動画ファイルを指定してください');
+  probe.removeAttribute('src');probe.load();
+  check();showStage('再生用の動画情報の取得');await Promise.all(videos.map(v=>waitSource(v,'loadedmetadata',()=>v.readyState>=1,()=>{v.pause();v.src=candidate;v.load()})));check();
+  showStage('先頭の映像の準備');await waitSource(videos[0],'loadeddata',()=>videos[0].readyState>=2);check();
   if(!restoring&&!options.reset)remember();if(options.reset){project=Core.empty();clearFeedback();sourceReturnScene='';}sourceFile=file;sourceURL=candidate;project.source=meta;sourceConfirmed=!!(options.reset||!old||(matches&&(restoring||previousConfirmed)));committed=true;
   if(oldURL)URL.revokeObjectURL(oldURL);if(!matches){setPracticeAssets([]);storyTimes=[];clearFrames();feedback('storyboardFeedback')}clearExport();dirty=true;update();drawRegion();feedback('sourceFeedback',sourceConfirmed?'録画を読み込みました。':'「'+old.name+'」から「'+meta.name+'」へ録画が変わりました。全場面の使う範囲と注目箇所を確認してください。',sourceConfirmed?'notice':'warning');note(sourceConfirmed?'録画を読み込みました。元の音声は使用しません。':'録画が変わりました。全場面の元動画区間と領域を確認し、録画確認ボタンを押してください',sourceConfirmed?'notice':'warning');return true;
- }catch(e){feedback('sourceFeedback',file.name+'：'+e.message,'error');note(file.name+'：'+e.message,'error');return false}
- finally{probe.removeAttribute('src');probe.load();if(!committed){if(sourceURL===oldURL)for(const v of videos){v.pause();if(oldURL)v.src=oldURL;else v.removeAttribute('src');v.load()}URL.revokeObjectURL(candidate)}if(ownsBusy)busySet(false);restoring=false}
+ }catch(e){if(sourceToken!==operation){feedback('sourceFeedback','素材読み込みを取り消しました。編集データは保持しています。','warning');return false}
+  const message=file.name+'：'+stage+'に失敗しました。'+e.message;
+  $('sourceErrorDetails').value=['日時：'+new Date().toISOString(),'段階：'+stage,'ファイル：'+file.name,'サイズ：'+file.size+' bytes','種類：'+(file.type||'不明'),'ブラウザー：'+(navigator.userAgent||'不明'),'詳細：'+e.message].join('\n');$('sourceDiagnostics').hidden=false;$('sourceDiagnostics').open=true;$('sourceErrorCopyStatus').textContent='';feedback('sourceFeedback',message,'error');note(message,'error');return false}
+ finally{for(const cancel of sourceReadCancels)cancel();probe.removeAttribute('src');probe.load();if(!committed){if(sourceURL===oldURL)for(const v of videos){v.pause();if(oldURL)v.src=oldURL;else v.removeAttribute('src');v.load()}URL.revokeObjectURL(candidate)}if(ownsBusy)busySet(false);restoring=false}
 }
 function clearFrames(){frameURLS.forEach(u=>URL.revokeObjectURL(u));frameURLS=[];storyDownloads.clear();$('downloads').replaceChildren()}
 async function importProposal(){$('structureIntake').open=true;try{const r=Core.validate(Core.parse($('proposal').value),project,true);if(r.errors.length){$('proposal').setAttribute('aria-invalid','true');feedback('proposalFeedback',r.errors.join('\n'),'error');revealControl($('proposal'));return}if(project.scenes.length&&!confirm('現在の構成を新しい案に差し替えますか？IDが一致する音声を保持し、「変更を取り消す」で元へ戻せます。'))return;stopPlayer();sceneErrors.clear();appliedProposalWarnings=[...r.warnings];copilotMode=true;commit(r.project);audios=new Map([...audios].filter(([id])=>scene(id)));$('proposal').removeAttribute('aria-invalid');update();$('structureIntake').open=!!(r.warnings.length||project.questions.length);focusHeading(2);feedback('proposalFeedback','構成を適用しました。下の場面を確認してください。'+(r.warnings.length?'\n'+r.warnings.join('\n'):''),r.warnings.length?'warning':'notice');updateCopilotNotes()}catch(e){$('proposal').setAttribute('aria-invalid','true');feedback('proposalFeedback','JSONを取り込めません：'+e.message,'error');revealControl($('proposal'))}}
