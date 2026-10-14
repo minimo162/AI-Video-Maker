@@ -89,7 +89,13 @@ UIは端末にある **BIZ UDPゴシック**（CSS名：BIZ UDPGothic）を優�
 
 ## 開発と検証
 
-アプリには依存パッケージがありません。Node.jsの標準ライブラリだけで次を実行できます。
+アプリには依存パッケージがありません。リポジトリのルートで次を実行すると、全テストを一括実行できます。Node.js 22 では `node --test tests/` だけでは `.cjs` が拾われないため、ワイルドカード付きのパスを指定します。Node.jsに加え、配布ZIPのテストにはPython 3（`python3`、`python`、`py -3` の順に確認）が必要です。Python 3 が見つからない環境では配布ZIPのテストをスキップし、その旨を表示します。
+
+    node --test tests/*.cjs
+
+Windows の PowerShell でも同じコマンドで動きます（`node --test tests\*.cjs` でも可）。
+
+個別に実行する場合は次のコマンドを使います。
 
     node tests/core.test.cjs
     node tests/editor.test.cjs
@@ -98,8 +104,9 @@ UIは端末にある **BIZ UDPゴシック**（CSS名：BIZ UDPGothic）を優�
     node tests/readability.test.cjs
     node tests/navigation.test.cjs
     node tests/detail-pass.test.cjs
+    node tests/package.test.cjs
 
-コア32項目・編集ハンドラー21項目・再生／書出し制御63項目・工程UI117項目・文字表示の静的検査13項目・工程移動29項目・出来事画像と手順18項目、計293項目を検証しました。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
+コア34項目・編集ハンドラー21項目・再生／書出し制御63項目・工程UI122項目・文字表示の静的検査13項目・工程移動29項目・出来事画像と手順・カーソル検出26項目・配布ZIP1項目、8ファイルの計309項目を検証しました（各ファイルの実行結果に基づく実測値）。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
 
 PR #3のWindows VM／Edge検証報告と今回の利用者による実Copilot・VOICEVOXの短尺MP4確認は、[検証記録](VALIDATION.md)に区別して記載しています。90秒の同期、実UIのcancel→retry、社内PCは引き続き未検証です。
 
