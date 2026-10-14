@@ -442,7 +442,7 @@ async function loadSource(file,syntheticDuration,options={}){
   if(options.minimumDuration&&duration<options.minimumDuration)throw Error('合成動画の長さが不足しています');if(!Number.isFinite(duration)||duration<=0)throw Error('動画長を確認できません。有限長のMP4素材を指定してください');
   const meta={name:file.name,size:file.size,lastModified:file.lastModified,duration,width:probe.videoWidth,height:probe.videoHeight},old=project.source;
   const matches=old&&['name','size','lastModified','width','height'].every(k=>old[k]===meta[k])&&Math.abs(old.duration-meta.duration)<.05;
-  if(old&&!matches&&!options.approved&&!confirm('録画を「'+old.name+'」から「'+meta.name+'」へ差し替えます。場面と注目箇所は保持します。差し替え後に使う範囲を確認してください。'))return false;
+  if(old&&!matches&&!options.approved&&!confirm('録画を「'+old.name+'」から「'+meta.name+'」へ差し替えます。場面と注目箇所は保持します。差し替え後に使う範囲を確認してください。')){const kept=oldURL?'前の録画「'+old.name+'」を保持しています。':'保存時の録画「'+old.name+'」の情報を保持しています。同じ録画を選び直してください。';feedback('sourceFeedback','「'+meta.name+'」への差し替えを取り消しました。'+kept,'notice');note('録画の差し替えを取り消しました。'+kept);return false}
   if(!meta.width||!meta.height)throw Error('映像の解像度を確認できません。映像を含む動画ファイルを指定してください');
   probe.removeAttribute('src');probe.load();
   check();showStage('再生用の動画情報の取得');await Promise.all(videos.map(v=>waitSource(v,'loadedmetadata',()=>v.readyState>=1,()=>{v.pause();v.src=candidate;v.load()})));check();
