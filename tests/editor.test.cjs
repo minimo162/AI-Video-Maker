@@ -7,7 +7,7 @@ class Element {
  append(...e){this.children.push(...e)}replaceChildren(...e){this.children=[...e]}setAttribute(k,v){this[k]=v}removeAttribute(k){delete this[k]}focus(){}select(){}click(){this.onclick?.()}load(){queueMicrotask(()=>{this.emit('loadedmetadata');this.emit('loadeddata')})}pause(){this.paused=true}play(){this.paused=false;return Promise.resolve()}get currentTime(){return this._time}set currentTime(t){this._time=t;queueMicrotask(()=>this.emit('seeked'))}
  addEventListener(name,fn){(this.listeners[name]??=[]).push(fn)}removeEventListener(name,fn){this.listeners[name]=(this.listeners[name]??[]).filter(f=>f!==fn)}emit(name){for(const f of [...(this.listeners[name]??[])])f();this['on'+name]?.()}
  set src(s){this._src=s;queueMicrotask(()=>{this.emit('loadedmetadata');this.emit('loadeddata')})}get src(){return this._src}
- getContext(){return {measureText:s=>({width:s.length*20}),drawImage(){},fillRect(){},strokeRect(){},fillText(){},save(){},restore(){}}}
+ getContext(){return {getImageData:()=>({data:new Uint8ClampedArray(256*144*4)}),measureText:s=>({width:s.length*20}),drawImage(){},fillRect(){},strokeRect(){},fillText(){},save(){},restore(){}}}
  toBlob(fn){setTimeout(()=>fn(new Blob(['synthetic'])),1)}
 }
 const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8'),scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]),elements={};
