@@ -23,7 +23,7 @@ function fixture(options={}){
   load(){queueMicrotask(()=>{this.emit('loadedmetadata');this.emit('loadeddata')})}pause(){this.paused=true}play(){this.paused=false;return Promise.resolve()}
   set src(v){this._src=v;const emit=()=>this.emit(state.rejectSource?'error':'loadedmetadata');if(state.sourceGate)state.sourceGate.then(emit);else queueMicrotask(emit)}get src(){return this._src}
   set currentTime(t){this._time=t;if(state.seekGate)state.seekGate.then(()=>this.emit('seeked'),()=>this.emit('error'));else queueMicrotask(()=>this.emit('seeked'))}get currentTime(){return this._time}
-  getContext(){return {getImageData(){state.scanCount=(state.scanCount||0)+1;return {data:new Uint8ClampedArray(256*144*4)}},measureText:t=>({width:t.length*20}),drawImage(){},fillRect(){},strokeRect(){},fillText(){},save(){},restore(){}}}
+  getContext(){return {getImageData(){state.scanCount=(state.scanCount||0)+1;return {data:new Uint8ClampedArray(256*144*4)}},measureText:t=>({width:t.length*20}),drawImage(){},fillRect(){},strokeRect(){},fillText(){},save(){},restore(){},beginPath(){},arc(){},stroke(){}}}
   captureStream(){throw Error('model capture failure')}
   toBlob(fn){(state.pngSizes??=[]).push([this.width,this.height]);queueMicrotask(()=>fn(new Blob(['synthetic'])))}
  }
