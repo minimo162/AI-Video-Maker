@@ -81,9 +81,11 @@ UIは端末にある **BIZ UDPゴシック**（CSS名：BIZ UDPGothic）を優�
 
 ## 開発と検証
 
-アプリには依存パッケージがありません。リポジトリのルートで次を実行すると、全テストを一括実行できます。Node.jsに加え、配布ZIPのテストにはPython 3（`python3`、`python`、`py -3` の順に確認）が必要です。Python 3 が見つからない環境では配布ZIPのテストをスキップし、その旨を表示します。
+アプリには依存パッケージがありません。リポジトリのルートで次を実行すると、全テストを一括実行できます。Node.js 22 では `node --test tests/` だけでは `.cjs` が拾われないため、ワイルドカード付きのパスを指定します。Node.jsに加え、配布ZIPのテストにはPython 3（`python3`、`python`、`py -3` の順に確認）が必要です。Python 3 が見つからない環境では配布ZIPのテストをスキップし、その旨を表示します。
 
-    node --test tests/
+    node --test tests/*.cjs
+
+Windows の PowerShell でも同じコマンドで動きます（`node --test tests\*.cjs` でも可）。
 
 個別に実行する場合は次のコマンドを使います。
 
