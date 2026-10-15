@@ -644,15 +644,17 @@ function drawRegion(){const c=$('regionCanvas'),ctx=c.getContext('2d'),v=videos[
 function regionPoint(e){const c=$('regionCanvas'),box=c.getBoundingClientRect(),v=videos[0],scale=Math.min(c.width/v.videoWidth,c.height/v.videoHeight),w=v.videoWidth*scale,h=v.videoHeight*scale;return {x:Math.max(0,Math.min(1,((e.clientX-box.left)*c.width/box.width-(c.width-w)/2)/w)),y:Math.max(0,Math.min(1,((e.clientY-box.top)*c.height/box.height-(c.height-h)/2)/h))}}
 let dragStart=null;$('regionCanvas').onpointerdown=e=>{if(busy||!sourceURL)return;videos[0].pause();drawRegion();dragStart=regionPoint(e);$('regionCanvas').setPointerCapture(e.pointerId)};$('regionCanvas').onpointermove=e=>{if(!dragStart)return;const q=regionPoint(e);regionSelection={x:Math.min(q.x,dragStart.x),y:Math.min(q.y,dragStart.y),w:Math.abs(q.x-dragStart.x),h:Math.abs(q.y-dragStart.y)};drawRegion()};$('regionCanvas').onpointerup=()=>{dragStart=null;if(regionSelection)for(const [id,key] of [['regionX','x'],['regionY','y'],['regionW','w'],['regionH','h']])$(id).value=(regionSelection[key]*100).toFixed(1)};
 function canvasBlob(c,type='image/png'){return new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(Error('画像を保存できません')),type))}
+// The 0.5s re-scan budget is shared by the whole recording; reaching it is reported to the user.
+const REFINE_LIMIT=2400;
 async function scanEvents(v,duration,extras,token){
  Core.sampleTimes(duration,extras); // Validate requested timestamps before scanning.
  // Whole-recording scan: coarse step by duration, then every change is re-scanned at 0.5s so short dialogs and menus are located.
  const canvas=document.createElement('canvas');canvas.width=256;canvas.height=144;const ctx=canvas.getContext('2d',{willReadFrequently:true}),samples=[];
- const coarse=duration<=120?.5:duration<=600?1:2,count=Math.floor(duration/coarse)+1,started=Date.now();let previous=null,refined=0;samples.seeks=0;
+ const coarse=duration<=120?.5:duration<=600?1:2,count=Math.floor(duration/coarse)+1,started=Date.now();let previous=null,refined=0;samples.seeks=0;samples.refineLimitAt=null;
  note('録画全体を確認します（'+count+'点）。所要時間の目安：約'+Math.ceil(count*.2)+'秒（1点あたり約0.2秒、変化部分の再走査で延びる場合があります）。環境により前後します。');
  const measure=async time=>{samples.seeks++;await seek(v,time);if(token!==operation)throw Error('画像生成を取り消しました');ctx.drawImage(v,0,0,256,144);return ctx.getImageData(0,0,256,144).data};
  for(let i=0;i<count;i++){if(token!==operation)throw Error('画像生成を取り消しました');const time=Math.min(Math.max(0,duration-.05),i*coarse),pixels=await measure(time);let change=Core.frameChange(previous,pixels,256);
-  if(previous&&coarse>.5&&change.score>=6&&refined<2400){let prev=previous;for(let t=samples.at(-1).time+.5;t<time-.001;t+=.5){const p=await measure(t);refined++;samples.push({time:t,...Core.frameChange(prev,p,256)});prev=p}change=Core.frameChange(prev,pixels,256)}
+  if(previous&&coarse>.5&&change.score>=6){if(refined<REFINE_LIMIT){let prev=previous;for(let t=samples.at(-1).time+.5;t<time-.001;t+=.5){const p=await measure(t);refined++;samples.push({time:t,...Core.frameChange(prev,p,256)});prev=p}change=Core.frameChange(prev,pixels,256)}else samples.refineLimitAt??=samples.at(-1).time}
   samples.push({time,...change});previous=pixels;$('progress').value=(i+1)/count;note('録画全体を確認中 '+(i+1)+' / '+count+'（'+Core.progressText(Date.now()-started,i+1,count)+'）。画面が変わった時刻と場所を記録しています。')}
  return samples;
 }
@@ -711,7 +713,7 @@ async function storyboard(single=false,plan=detailPlan){if(busy)return;copilotMo
  feedback('storyboardFeedback','録画全体から画面の変化 '+local+' 件を見つけ、出来事画像 '+pages.length+' ファイルにまとめました。変化した部分は元の解像度のまま切り出しています。下の確認欄で画像を見てから、まとめて保存するか各リンクから保存し、Copilotへ手動添付してください。'
   +'\n内訳：切り出し '+keptLocal+' 件・全画面 '+(kept.length-keptLocal)+' 件'+(lastScan.dropped?'・添付上限のため省いた弱い変化 '+lastScan.dropped+' 件':'')+'。マウスカーソル '+cursorFound+' / '+cursorTargets+' 件で検出。走査 '+samples.seeks+' 回、所要 '+Core.formatSeconds(lastScan.seconds)+'。'
   +(quiet.length?'\n'+Core.formatSeconds(60)+'以上画面の変化が見つからなかった区間：'+quiet.slice(0,5).map(r=>r.sourceIn+'〜'+r.sourceOut+'秒').join('、')+(quiet.length>5?' ほか '+(quiet.length-5)+' 区間':'')+'。この区間は一定間隔の全画面だけを渡します。':'')
-  +(samples.length>1&&!local?'\n画面の変化を検出できませんでした。一定間隔の全画面だけを渡します。':''));return true;
+  +(samples.refineLimitAt!=null?'\n0.5秒刻みの細かい再確認が上限（'+REFINE_LIMIT+'回）に達したため、元動画 '+Math.round(samples.refineLimitAt)+'秒以降の変化は走査間隔の位置のままです。後半の操作の時刻は最大'+(duration<=600?1:2)+'秒ずれることがあります。正確な時刻が必要なら、録画を目的ごとに短く分けるか、「出来事画像に追加する時刻を指定」で時刻を加えてください。':'')+(samples.length>1&&!local?'\n画面の変化を検出できませんでした。一定間隔の全画面だけを渡します。':''));return true;
  }catch(e){feedback('storyboardFeedback',e.message,'warning');return false}finally{await seek(v,restoreTime).catch(()=>{});drawRegion();busySet(false)}}
 // A single renderer is used for seeking, playback, and export.
 function renderScene(canvas,s,time,duration,video,last){
