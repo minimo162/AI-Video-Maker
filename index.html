@@ -254,12 +254,12 @@ function frameChange(a,b,width=0,threshold=10){
 function frameDifference(a,b,width=0){return frameChange(a,b,width).score}
 function unionRegion(a,b){if(!a)return b??null;if(!b)return a;const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y);return {x,y,w:Math.max(a.x+a.w,b.x+b.w)-x,h:Math.max(a.y+a.h,b.y+b.h)-y}}
 function changeEvents(samples,minScore=6,gap){
- // Groups consecutive changed samples (typing, a menu opening and closing, a dialog) into one event with the state before it.
+ // Group consecutive changes, keeping up to two recent states just before another change (e.g. a dialog selection before OK).
  if(gap===undefined){const spacing=samples.length>1?(samples.at(-1).time-samples[0].time)/(samples.length-1):1;gap=Math.max(1.5,spacing*1.25)}
  const events=[];let current=null;
  for(let i=1;i<samples.length;i++){const s=samples[i];if(s.score<minScore){continue}
-  if(current&&s.time-current.end<=gap){current.end=s.time;if(s.score>current.score){current.score=s.score;current.peak=s.time}current.coverage=Math.max(current.coverage,s.coverage??0);current.region=unionRegion(current.region,s.region??null)}
-  else{current={start:samples[i-1].time,first:s.time,end:s.time,peak:s.time,score:s.score,coverage:s.coverage??0,region:s.region??null};events.push(current)}
+  if(current&&s.time-current.end<=gap){current.intermediates.push(samples[i-1].time);if(current.intermediates.length>2)current.intermediates.shift();current.end=s.time;if(s.score>current.score){current.score=s.score;current.peak=s.time}current.coverage=Math.max(current.coverage,s.coverage??0);current.region=unionRegion(current.region,s.region??null)}
+  else{current={start:samples[i-1].time,first:s.time,end:s.time,peak:s.time,score:s.score,coverage:s.coverage??0,region:s.region??null,intermediates:[]};events.push(current)}
  }
  for(const e of events)e.full=e.coverage>=.4||!e.region;
  return events;
@@ -314,11 +314,11 @@ function cursorCaptures(captures,width,height){
 function cursorLabel(cursor){return cursor?regionPosition({x:cursor.x,y:cursor.y,w:0,h:0})+'（左から'+Math.round(cursor.x*100)+'%・上から'+Math.round(cursor.y*100)+'%）':''}
 function regionPosition(region){if(!region)return '全画面';const cx=region.x+region.w/2,cy=region.y+region.h/2;return (cy<1/3?'上':cy<2/3?'中段':'下')+(cx<1/3?'左':cx<2/3?'中央':'右')}
 function eventCaptures(samples,duration,extras=[],options={}){
- // Every detected change becomes a capture of the screen after it (plus the first change of a long burst),
+ // Capture the final state, up to two states before subsequent changes, and the first state of a long burst.
  // user-specified times are always kept, and evenly spaced full frames keep the overall flow visible.
  const anchorGap=options.anchorGap??Math.max(8,Math.min(150,duration/20)),events=changeEvents(samples,options.minScore??6),captures=[];
  for(const t of [...new Set(extras)])captures.push({time:t,region:null,priority:1e9,kind:'指定'});
- for(const e of events){const region=e.full?null:e.region,kind=e.full?'全画面':'局所';captures.push({time:e.end,region,priority:e.score,kind,before:e.start});if(e.end-e.first>8)captures.push({time:e.first,region,priority:e.score*.8,kind,before:e.start})}
+ for(const e of events){const region=e.full?null:e.region,kind=e.full?'全画面':'局所';captures.push({time:e.end,region,priority:e.score,kind,before:e.start});for(const time of e.intermediates)captures.push({time,region,priority:e.score*.8,kind,before:e.start});if(e.end-e.first>8)captures.push({time:e.first,region,priority:e.score*.8,kind,before:e.start})}
  const full=()=>captures.filter(c=>!c.region).map(c=>c.time);
  for(let t=0;t<duration;t+=anchorGap){if(!full().some(x=>Math.abs(x-t)<=anchorGap/2))captures.push({time:Math.min(t,Math.max(0,duration-.05)),region:null,priority:1e8,kind:'全画面'})}
  const last=Math.max(0,duration-.1);if(!full().some(x=>x>=last-anchorGap/2))captures.push({time:last,region:null,priority:1e8,kind:'全画面'});
