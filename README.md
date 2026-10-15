@@ -113,6 +113,7 @@ PR #3のWindows VM／Edge検証報告と今回の利用者による実Copilot・
 ### 計測の道具
 
 - [Copilotの可読性の較正](docs/CALIBRATION_JA.md)：`tools/calibration.html` で、出来事画像と同じ大きさの画像に 8〜24px の乱数の文字列を描き、Copilotに書き写してもらって文字の大きさごとの正答率を出します（採点は `tools/calibration-score.cjs` でも可）。**実際のCopilotではまだ測っていません。**
+- [変化検出の精度ベンチマーク](docs/BENCHMARK_JA.md)：正解の操作表（CSV）とアプリの出来事一覧を `tools/benchmark.html`（または `tools/benchmark.cjs`）で比べ、取りこぼし率・誤検出率・時刻のずれ・途中の状態の捕捉率を出します。合成データでのテストだけで、**実際の録画ではまだ測っていません。**
 
 prototype.html は実機用の最小12秒診断です。アプリ本体の素材読込・同期の合格を示すものではありません。
 
