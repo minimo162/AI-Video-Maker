@@ -110,6 +110,10 @@ Windows の PowerShell でも同じコマンドで動きます（`node --test te
 
 PR #3のWindows VM／Edge検証報告と今回の利用者による実Copilot・VOICEVOXの短尺MP4確認は、[検証記録](VALIDATION.md)に区別して記載しています。90秒の同期、実UIのcancel→retry、社内PCは引き続き未検証です。
 
+### 計測の道具
+
+- [Copilotの可読性の較正](docs/CALIBRATION_JA.md)：`tools/calibration.html` で、出来事画像と同じ大きさの画像に 8〜24px の乱数の文字列を描き、Copilotに書き写してもらって文字の大きさごとの正答率を出します（採点は `tools/calibration-score.cjs` でも可）。**実際のCopilotではまだ測っていません。**
+
 prototype.html は実機用の最小12秒診断です。アプリ本体の素材読込・同期の合格を示すものではありません。
 
 ## 公開内容とライセンス

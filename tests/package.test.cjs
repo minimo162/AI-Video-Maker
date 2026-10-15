@@ -15,7 +15,7 @@ await test('配布ZIPとMANIFESTにdocsの2文書を含め許可リスト外の�
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ai-video-maker-package-'));
  try{
   for(const entry of fs.readdirSync(root,{withFileTypes:true})){
-   if((entry.isFile()&&(!entry.name.startsWith('.')||entry.name==='.gitignore')&&!entry.name.endsWith('.zip'))||['docs','scripts','tests'].includes(entry.name))fs.cpSync(path.join(root,entry.name),path.join(dir,entry.name),{recursive:true});
+   if((entry.isFile()&&(!entry.name.startsWith('.')||entry.name==='.gitignore')&&!entry.name.endsWith('.zip'))||['docs','scripts','tests','tools'].includes(entry.name))fs.cpSync(path.join(root,entry.name),path.join(dir,entry.name),{recursive:true});
   }
   fs.writeFileSync(path.join(dir,'docs','unlisted.md'),'Not for distribution');
   const result=JSON.parse((await execFile(python.command,[...python.args,path.join(dir,'scripts/package.py')])).stdout);
@@ -39,7 +39,7 @@ await test('配布ZIPの中で相対リンクがすべて解決し、切れた�
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ai-video-maker-links-'));
  try{
   for(const entry of fs.readdirSync(root,{withFileTypes:true})){
-   if((entry.isFile()&&(!entry.name.startsWith('.')||entry.name==='.gitignore')&&!entry.name.endsWith('.zip'))||['docs','scripts','tests'].includes(entry.name))fs.cpSync(path.join(root,entry.name),path.join(dir,entry.name),{recursive:true});
+   if((entry.isFile()&&(!entry.name.startsWith('.')||entry.name==='.gitignore')&&!entry.name.endsWith('.zip'))||['docs','scripts','tests','tools'].includes(entry.name))fs.cpSync(path.join(root,entry.name),path.join(dir,entry.name),{recursive:true});
   }
   const ok=JSON.parse((await execFile(python.command,[...python.args,path.join(dir,'scripts/package.py')])).stdout);
   assert.equal(ok.links,'all relative links resolve');

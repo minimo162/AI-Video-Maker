@@ -30,6 +30,7 @@ test('切れたリンクとフラグメント付きのリンクを区別する',
 });
 test('テストファイルと文書はすべて配布の許可リストに載っている',()=>{
  for(const name of fs.readdirSync(path.join(root,'tests')).filter(n=>n.endsWith('.cjs')))assert.ok(shipped.has('tests/'+name),'tests/'+name+' がpackage.pyの許可リストにある');
+ for(const name of fs.readdirSync(path.join(root,'tools')))assert.ok(shipped.has('tools/'+name),'tools/'+name+' がpackage.pyの許可リストにある');
  for(const name of fs.readdirSync(path.join(root,'docs')).filter(n=>/\.(md|html|txt)$/.test(n)))assert.ok(shipped.has('docs/'+name),'docs/'+name+' がpackage.pyの許可リストにある');
 });
 console.log(count+' document link tests passed.');

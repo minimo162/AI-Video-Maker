@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<title>AI Video Maker — Copilotの可読性の較正シート</title>
+<style>
+body{margin:0;background:#f4f7f9;color:#142d40;font:18px/1.75 "BIZ UDPGothic","BIZ UDPゴシック","Yu Gothic","Meiryo",system-ui,sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px}section{background:#fff;border:1px solid #d9e3e8;border-radius:14px;padding:16px 20px;margin:16px 0}
+h1{font-size:26px;margin:0 0 8px}h2{font-size:21px;margin:0 0 8px}label{display:block;margin:8px 0}input,select,textarea,button{font:inherit}
+textarea{width:100%;min-height:10em;box-sizing:border-box}button{min-height:46px;padding:8px 16px;border-radius:10px;border:1px solid #b7c7d1;background:#fff;font-weight:600;cursor:pointer}
+.hint{color:#536879;font-size:16px}.warning{color:#9b253c}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d9e3e8;padding:4px 8px;text-align:right}th:first-child,td:first-child{text-align:left}
+#preview{max-width:100%;border:1px solid #d9e3e8}
+</style>
+</head>
+<body>
+<main>
+<h1>Copilotの可読性の較正シート</h1>
+<p>出来事画像と同じ大きさ・配置の画像に、意味のない文字列を 8〜24px の大きさで描きます。Copilotに書き写してもらい、文字の大きさごとの正答率を出します。結果は、出来事画像の大きさや1枚あたりの画像数を決める材料にします。</p>
+<p class="hint">このページは通信しません。画像は端末の中で作り、Copilotへの添付と回答の貼り付けは利用者が手で行います。乱数の文字列なので、文脈から推測して当てることはできません。手順は docs/CALIBRATION_JA.md を見てください。</p>
+<section>
+<h2>1. 較正PNGを作る</h2>
+<label>シートの大きさ<select id="preset"></select></label>
+<label>乱数の種（同じ種なら同じ画像になります。採点にも使います）<input id="seed"></label>
+<button id="generate">較正PNGを作る</button> <a id="download" hidden>較正PNGを保存</a>
+<p id="generateNote" class="hint" role="status"></p>
+<img id="preview" alt="作った較正PNGの縮小表示" hidden>
+</section>
+<section>
+<h2>2. Copilotに渡す</h2>
+<p>新しい会話で較正PNGを1枚だけ添付し、次の依頼文を貼り付けて送ります。</p>
+<textarea id="prompt" readonly aria-label="較正用の依頼文"></textarea>
+<button id="copyPrompt">依頼文をコピー</button> <span id="copyNote" class="hint" role="status"></span>
+</section>
+<section>
+<h2>3. 回答を採点する</h2>
+<label>Copilotの種類と日付のメモ（記録用）<input id="copilot" placeholder="例：Microsoft 365 Copilot（Edge・職場アカウント）2026-10-20"></label>
+<label>Copilotの回答<textarea id="answer"></textarea></label>
+<button id="score">採点する</button>
+<div id="result" role="status"></div>
+<label>VALIDATION.md に貼る記録<textarea id="record" readonly></textarea></label>
+</section>
+</main>
+<script>
+const Calib=(()=>{
+// Same geometry as packSheets() in index.html for a 1920x1080 capture: 12px padding, 42px label, 2 columns, 3 rows.
+const FRAME_W=1920,FRAME_H=1080,PAD=12,LABEL=42,CELL_W=FRAME_W+PAD*2,CELL_H=FRAME_H+LABEL+PAD*2;
+const PRESETS={full:{label:'本番の最大（全画面6枚分・3888×3438）',columns:2,rows:3},two:{label:'全画面2枚分（3888×1146）',columns:2,rows:1},one:{label:'比較用：全画面1枚だけの画像（1944×1146、本番にはない大きさ）',columns:1,rows:1}};
+const SIZES=[8,10,12,15,18,24],SCRIPTS=['latin','ja'],REPEAT=2,ID_SIZE=28,SERIAL_SIZE=48,TIME_SIZE=24;
+// Characters that are easy to confuse (0/O, 1/I/l, 5/S, 2/Z, 8/B, 6/G) are excluded so errors reflect resolution, not glyph design.
+const LATIN='ACDEFHJKLMNPRTUVWXY3479',JA='申請登録検索金額部署承認確認入力保存表示削除変更期間合計番号名前日付経費出張アイウエカキクケコサシスセタチテトナニヌネハヒフヘホマミムメモヤユヨラリルレロワ';
+const LENGTH={latin:8,ja:6};
+const PROMPT='添付した画像に書かれている文字列を書き写してください。\n- 各文字列の左にある番号（例：A01、B13）ごとに「A01: 文字列」の形で、1行に1つずつ、すべて書いてください。\n- 各枠の下にある「元動画 ○秒」の秒数は、枠の左上の大きな番号（#1〜#6）ごとに「T1: 123.4」の形で書いてください。\n- 文字列は意味のない乱数です。読めない文字を推測で補わず、読めない行は「A01: ?」と書いてください。\n- 説明や前置きは不要です。';
+function hash(text){let h=2166136261;for(const c of String(text))h=Math.imul(h^c.codePointAt(0),16777619)>>>0;return h}
+function rng(seed){let a=hash(seed);return ()=>{a=a+0x6D2B79F5>>>0;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296}}
+function sheetSize(preset){const p=PRESETS[preset];if(!p)throw Error('不明なシートの大きさです：'+preset);return {width:CELL_W*p.columns,height:CELL_H*p.rows}}
+function makeKey(seed,preset){
+ const p=PRESETS[preset];if(!p)throw Error('不明なシートの大きさです：'+preset);const r=rng(seed+'|'+preset),pick=set=>[...set][Math.floor(r()*[...set].length)];
+ const items=[],labels=[];
+ for(let cell=0;cell<p.columns*p.rows;cell++){
+  const letter='ABCDEF'[cell],cx=(cell%p.columns)*CELL_W,cy=Math.floor(cell/p.columns)*CELL_H;let n=0;
+  for(const [si,size] of SIZES.entries())for(const [ci,script] of SCRIPTS.entries())for(let k=0;k<REPEAT;k++){
+   n++;const text=Array.from({length:LENGTH[script]},()=>pick(script==='latin'?LATIN:JA)).join('');
+   items.push({id:letter+String(n).padStart(2,'0'),size,script,text,x:cx+PAD+130+ci*920,y:cy+PAD+150+(si*REPEAT+k)*74});
+  }
+  labels.push({serial:cell+1,time:Math.round(r()*36000)/10,x:cx+PAD,y:cy+PAD+FRAME_H+30});
+ }
+ return {version:1,seed:String(seed),preset,...sheetSize(preset),items,labels};
+}
+function draw(ctx,key){
+ // Mirrors the production sheet: light background, framed captures, 24px time label under each capture.
+ ctx.fillStyle='#f2f6f8';ctx.fillRect(0,0,key.width,key.height);
+ for(const l of key.labels){const x=l.x,y=l.y-30-FRAME_H;ctx.fillStyle='#ffffff';ctx.fillRect(x,y,FRAME_W,FRAME_H);ctx.strokeStyle='#8aa4b8';ctx.lineWidth=2;ctx.strokeRect(x,y,FRAME_W,FRAME_H);
+  ctx.fillStyle='#142d40';ctx.font='bold '+SERIAL_SIZE+'px sans-serif';ctx.fillText('#'+l.serial,x+24,y+70);
+  ctx.font=TIME_SIZE+'px sans-serif';ctx.fillText('元動画 '+l.time.toFixed(1)+'秒 ・ 全画面',l.x,l.y)}
+ for(const it of key.items){ctx.fillStyle='#536879';ctx.font='bold '+ID_SIZE+'px sans-serif';ctx.fillText(it.id,it.x-100,it.y);ctx.fillStyle='#000000';ctx.font=it.size+'px sans-serif';ctx.fillText(it.text,it.x,it.y)}
+}
+function normalize(text){return String(text??'').normalize('NFKC').replace(/[\s「」『』"'`]/g,'').toUpperCase()}
+function distance(a,b){a=[...a];b=[...b];let prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur}return prev[b.length]}
+function parseAnswer(text){
+ const items=new Map(),times=new Map();
+ for(const raw of String(text??'').normalize('NFKC').split(/\r?\n/)){const line=raw.replace(/^[\s\-*・>|]+/,'').replace(/[*`]/g,'');
+  let m=line.match(/^T\s*([1-6])\s*[:：]\s*(.*)$/i);if(m){const v=m[2].match(/\d+(?:\.\d+)?/);times.set(Number(m[1]),v?Number(v[0]):null);continue}
+  m=line.match(/^([A-F])\s*(\d{1,2})\s*[:：|]\s*(.*?)\s*\|?$/i);if(m)items.set(m[1].toUpperCase()+m[2].padStart(2,'0'),m[3])}
+ return {items,times};
+}
+function score(key,answerText){
+ const answer=parseAnswer(answerText),groups=new Map();
+ for(const it of key.items){
+  const got=answer.items.has(it.id)?normalize(answer.items.get(it.id)):'',want=normalize(it.text),unread=!got||got==='?';
+  const chars=unread?0:Math.max(0,1-distance(got,want)/[...want].length),k=it.size+'|'+it.script,g=groups.get(k)??{size:it.size,script:it.script,n:0,exact:0,chars:0,unread:0};
+  g.n++;g.exact+=!unread&&got===want?1:0;g.chars+=chars;g.unread+=unread?1:0;groups.set(k,g);
+ }
+ const rows=[...groups.values()].map(g=>({...g,exactRate:g.exact/g.n,charRate:g.chars/g.n}));
+ const labels=key.labels.map(l=>({serial:l.serial,want:l.time,got:answer.times.get(l.serial)??null,ok:answer.times.get(l.serial)!=null&&Math.abs(answer.times.get(l.serial)-l.time)<.05}));
+ return {rows,labels,answered:answer.items.size,expected:key.items.length};
+}
+function percent(v){return (v*100).toFixed(0)+'%'}
+function report(key,result,meta={}){
+ const lines=['### 可読性の較正（'+(meta.date??'日付未記入')+'）','','- Copilot：'+(meta.copilot||'未記入'),'- シート：'+PRESETS[key.preset].label+'、乱数の種 `'+key.seed+'`','- 回答の行数：'+result.answered+' / '+key.expected,'','| 文字の大きさ | 英数字の完全一致 | 英数字の文字単位 | 日本語の完全一致 | 日本語の文字単位 |','|---:|---:|---:|---:|---:|'];
+ for(const size of SIZES){const l=result.rows.find(r=>r.size===size&&r.script==='latin'),j=result.rows.find(r=>r.size===size&&r.script==='ja');lines.push('| '+size+'px | '+percent(l.exactRate)+' | '+percent(l.charRate)+' | '+percent(j.exactRate)+' | '+percent(j.charRate)+' |')}
+ const ok=result.labels.filter(l=>l.ok).length;lines.push('','- 時刻ラベル（24px）：'+ok+' / '+result.labels.length+' 件正解');
+ return lines.join('\n');
+}
+return {PRESETS,SIZES,PROMPT,FRAME_W,FRAME_H,rng,sheetSize,makeKey,draw,normalize,distance,parseAnswer,score,report};
+})();
+if(typeof module!=='undefined')module.exports=Calib;
+</script>
+<script>
+const $=id=>document.getElementById(id);
+for(const [value,p] of Object.entries(Calib.PRESETS)){const o=document.createElement('option');o.value=value;o.textContent=p.label;$('preset').append(o)}
+$('seed').value=Math.random().toString(36).slice(2,10);$('prompt').value=Calib.PROMPT;
+let url='';
+$('generate').onclick=()=>{
+ const key=Calib.makeKey($('seed').value.trim()||'0',$('preset').value),canvas=document.createElement('canvas');canvas.width=key.width;canvas.height=key.height;Calib.draw(canvas.getContext('2d'),key);
+ canvas.toBlob(blob=>{if(!blob){$('generateNote').textContent='画像を作れませんでした。';return}if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(blob);const a=$('download');a.href=url;a.download='calibration-'+key.preset+'-'+key.seed+'.png';a.hidden=false;$('preview').src=url;$('preview').hidden=false;
+  $('generateNote').textContent=key.width+'×'+key.height+' px、文字列 '+key.items.length+' 件。「較正PNGを保存」で保存してから、Copilotに添付してください。採点には同じ乱数の種と大きさを使います。'},'image/png');
+};
+$('copyPrompt').onclick=async()=>{try{await navigator.clipboard.writeText($('prompt').value);$('copyNote').textContent='コピーしました。'}catch{$('prompt').select();$('copyNote').textContent='自動でコピーできません。選択した文字をコピーしてください。'}};
+$('score').onclick=()=>{
+ const key=Calib.makeKey($('seed').value.trim()||'0',$('preset').value),result=Calib.score(key,$('answer').value);
+ const table=document.createElement('table'),head=table.insertRow();for(const h of ['文字の大きさ','種類','完全一致','文字単位','読めないと回答'])head.append(Object.assign(document.createElement('th'),{textContent:h}));
+ for(const r of result.rows){const tr=table.insertRow();for(const v of [r.size+'px',r.script==='latin'?'英数字':'日本語',(r.exactRate*100).toFixed(0)+'%',(r.charRate*100).toFixed(0)+'%',r.unread+' / '+r.n])tr.insertCell().textContent=v}
+ $('result').replaceChildren(Object.assign(document.createElement('p'),{textContent:'回答の行数：'+result.answered+' / '+result.expected+(result.answered?'':'。番号付きの行が見つかりません。回答を「A01: 文字列」の形で頼み直してください。'),className:result.answered?'':'warning'}),table);
+ $('record').value=Calib.report(key,result,{copilot:$('copilot').value.trim(),date:new Date().toISOString().slice(0,10)});
+};
+</script>
+</body>
+</html>
