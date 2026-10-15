@@ -194,9 +194,9 @@ if(require.main===module)(async()=>{
   if(single){const p=f.saved();p.scenes=p.scenes.slice(0,1);f.E.proposal.value=JSON.stringify(p);await f.E.applyProposal.click()}else await f.apply();
   return f;
  }
- await test('初心者の入口は原稿自作でなくCopilotの下書きを案内する',async()=>{
-  const f=fixture();await f.source();assert.equal(f.E.sourcePreparation.hidden,true);assert.equal(f.E.guideAction.textContent,'Copilotで字幕の下書きを作る');
-  f.E.guideAction.click();assert.equal(f.E.sceneCards.children.length,0);assert.equal(f.E.sourcePreparation.hidden,false);assert.equal(f.E.guideAction.textContent,'説明したい操作を書く');assert.equal(f.state.activeElement,f.E.purpose);
+ await test('主な入口はCopilot制作を案内し、アプリ編集も明示的に選べる',async()=>{
+  const f=fixture();await f.source();assert.equal(f.E.sourcePreparation.hidden,true);assert.equal(f.E.guideAction.textContent,'Copilotで完成動画を作る');
+  f.E.startFirstVideo.click();assert.equal(f.E.sceneCards.children.length,0);assert.equal(f.E.sourcePreparation.hidden,false);assert.equal(f.E.guideAction.textContent,'説明したい操作を書く');assert.equal(f.state.activeElement,f.E.purpose);
   f.E.purpose.value='申請を登録する';f.E.purpose.onchange();assert.equal(f.E.guideAction.textContent,'Copilot用の画像を作る');await f.E.guideAction.click();assert.equal(f.E.downloads.children.length,1);
   f.E.guideAction.click();f.E.guideAction.click();assert.deepEqual(f.active(),[2]);await f.E.guideAction.click();assert.match(f.state.clipboardText,/読み上げ原稿（narration）をあなたが作成/);assert.match(f.state.clipboardText,/声を付けず字幕だけ/);assert.match(f.state.clipboardText,/申請を登録する/);assert.equal(f.E.guideAction.textContent,'回答を貼り付ける');
  });
@@ -241,7 +241,7 @@ if(require.main===module)(async()=>{
   const f=await beginner(true);f.E.useNarration.checked=true;f.E.useNarration.onchange();const n=f.E.sceneCards.children[0].querySelector('[data-field="narration"]');f.step(3);let done;f.state.clipboardGate=new Promise(r=>done=r);const copying=f.E.copyFirstNarration.click();f.step(2);n.value='コピー待ち中の新しい原稿';n.onchange();done();await copying;f.step(3);assert.equal(f.state.clipboardText,'説明1');assert.equal(f.E.guideAction.textContent,'読み上げる本文だけをコピー');
  });
  await test('新規作業は字幕のみの設定を持ち越さず入口で選び直せる',async()=>{
-  const f=await beginner();f.E.newProject.click();await f.source();assert.equal(f.E.guideAction.textContent,'Copilotで字幕の下書きを作る');f.E.startCopilot.click();await f.apply();assert.equal(f.E.useNarration.checked,true);assert.equal(f.E.export.disabled,true);
+  const f=await beginner();f.E.newProject.click();await f.source();assert.equal(f.E.guideAction.textContent,'Copilotで完成動画を作る');f.E.startCopilot.click();await f.apply();assert.equal(f.E.useNarration.checked,true);assert.equal(f.E.export.disabled,true);
  });
  await test('全体を一括依頼し5分目安・目的別分割・横長の方針を伝える',async()=>{const f=fixture();await f.source();await f.E.copyPrompt.click();assert.equal(f.E.target,undefined);assert.equal(f.E.chapterSelect,undefined);assert.match(f.state.clipboardText,/5分（300秒）/);assert.match(f.state.clipboardText,/横長/);assert.match(f.state.clipboardText,/待ち時間・繰り返し・寄り道/);assert.match(f.state.clipboardText,/目的ごとに分割/);assert.match(f.state.clipboardText,/1本分のJSONをまとめて/)});
  await test('保存前のクレジット警告は統一ラベルでクレジット入力へ案内する',async()=>{const f=fixture();await f.source();await f.apply();await f.audio();f.E.credits.value='あ'.repeat(200);f.E.credits.onchange();f.step(4);await tick();assert.equal(f.E.guideAction.textContent,'保存前の入力を確認');assert.match(f.E.guideDescription.textContent,/クレジット/);f.E.guideAction.click();assert.equal(f.state.activeElement,f.E.credits)});
