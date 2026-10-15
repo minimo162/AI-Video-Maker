@@ -137,7 +137,19 @@ function stepsDocument(p){
  if(p.questions.length){lines.push('','確認事項');for(const q of p.questions)lines.push('- '+q)}
  return lines.join('\n');
 }
-function parse(text){let t=text.trim();if(t.startsWith('```')){const m=t.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);if(!m)throw Error('JSON：コードフェンスまたは前後文を確認してください');t=m[1]}return JSON.parse(t)}
+function parse(text,proposal=false,warnings=[]){
+ const strict=t=>{if(t.startsWith('```')){const m=t.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);if(!m)throw Error('JSON：コードフェンスまたは前後文を確認してください');t=m[1]}return JSON.parse(t)};
+ const t=text.trim();try{return strict(t)}catch(e){
+  if(!proposal)throw e;
+  const fences=[...t.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n```/g)];let json;
+  if(fences.length===1)json=fences[0][1];
+  else if(!t.includes('```')){
+   const start=t.indexOf('{');let depth=0,quoted=false,escaped=false;
+   for(let i=start;start>=0&&i<t.length;i++){const c=t[i];if(quoted){if(escaped)escaped=false;else if(c==='\\')escaped=true;else if(c==='"')quoted=false}else if(c==='"')quoted=true;else if(c==='{')depth++;else if(c==='}'&&--depth===0){json=t.slice(start,i+1);break}}
+  }
+  if(json===undefined)throw e;const raw=JSON.parse(json);warnings.push('JSON：前後の文章を除いてJSON部分を読み込みました');return raw;
+ }
+}
 function validate(raw,base,proposal=false){
  const errors=[],warnings=[];const obj=(v,path)=>{if(!v||typeof v!=='object'||Array.isArray(v)){errors.push(path+'：オブジェクトが必要です');return {}}return v};
  const keys=(v,allowed,path)=>Object.keys(v).forEach(k=>{if(!allowed.includes(k))warnings.push(path+'.'+k+'：未知の項目を無視しました')});
@@ -145,7 +157,7 @@ function validate(raw,base,proposal=false){
  const num=(v,path)=>{if(typeof v!=='number'||!Number.isFinite(v)){errors.push(path+'：有限の数値が必要です');return 0}return v};
  raw=obj(raw,'JSON');keys(raw,proposal?['schemaVersion','title','scenes','questions','nextRanges','steps']:['schemaVersion','title','source','output','regions','scenes','audioMode','credits','questions','steps'],'JSON');
  if(raw.schemaVersion!==1)errors.push('schemaVersion：1のみ対応しています');
- const p=empty();if(proposal&&raw.title===undefined){p.title=base.title;warnings.push('title：省略されていたため、現在のタイトルを使用しました')}else p.title=str(raw.title,'title',120);p.audioMode=proposal?(base.audioMode??'wav'):(raw.audioMode===undefined?'wav':raw.audioMode);if(!['none','wav'].includes(p.audioMode))errors.push('audioMode：none/wavのみ対応');
+ const p=empty();if(proposal&&raw.title==null){p.title=base.title||'無題の手順';warnings.push('title：省略またはnullのため、既定のタイトルを使用しました')}else p.title=str(raw.title,'title',120);p.audioMode=proposal?(base.audioMode??'wav'):(raw.audioMode===undefined?'wav':raw.audioMode);if(!['none','wav'].includes(p.audioMode))errors.push('audioMode：none/wavのみ対応');
  if(proposal){p.source=clone(base.source);p.output=clone(base.output);p.regions=clone(base.regions);p.credits=base.credits}
  else{
   const s=obj(raw.source,'source');keys(s,['name','size','lastModified','duration','width','height'],'source');p.source={name:str(s.name,'source.name',255),size:num(s.size,'source.size'),lastModified:num(s.lastModified,'source.lastModified'),duration:num(s.duration,'source.duration'),width:num(s.width,'source.width'),height:num(s.height,'source.height')};
@@ -161,7 +173,8 @@ function validate(raw,base,proposal=false){
  if(!Array.isArray(raw.scenes)||raw.scenes.length<1||raw.scenes.length>600)errors.push('scenes：1〜600場面が必要です');
  const ids=new Set();for(const [i,s0] of (Array.isArray(raw.scenes)?raw.scenes:[]).entries()){
   const path='scenes['+i+']',s=obj(s0,path);keys(s,proposal?['id','stepId','sourceIn','sourceOut','narration','caption','captionPosition','regionId','effect']:['id','stepId','sourceIn','sourceOut','narration','caption','captionPosition','regionId','effect','audioFile','audioTextAtImport','audioMeta','audioAssigned'],path);
-  const v={id:str(s.id,path+'.id',40),sourceIn:num(s.sourceIn,path+'.sourceIn'),sourceOut:num(s.sourceOut,path+'.sourceOut'),narration:str(s.narration,path+'.narration'),caption:str(s.caption,path+'.caption',200),captionPosition:s.captionPosition??'bottom',regionId:s.regionId??'',effect:s.effect??'none'};
+  const v={id:str(s.id,path+'.id',40),sourceIn:num(s.sourceIn,path+'.sourceIn'),sourceOut:num(s.sourceOut,path+'.sourceOut'),narration:str(proposal&&s.narration===null?'':s.narration,path+'.narration'),caption:str(proposal&&s.caption===null?'':s.caption,path+'.caption',200),captionPosition:s.captionPosition??'bottom',regionId:s.regionId??'',effect:s.effect??'none'};
+  if(proposal)for(const key of ['caption','narration'])if(s[key]===null)warnings.push(path+'.'+key+'：nullを空文字にしました');
   if(s.stepId!==undefined&&typeof s.stepId!=='string')warnings.push(path+'.stepId：文字列でないため対応する手順なしにしました');if(typeof s.stepId==='string'&&s.stepId){if(s.stepId.length<=40&&stepIds.has(s.stepId))v.stepId=s.stepId;else warnings.push(v.id+'.stepId：手順 '+s.stepId.slice(0,40)+' がstepsにないため対応なしにしました')}
   if(!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v.id)||ids.has(v.id))errors.push(v.id+'.id：不正または重複しています');ids.add(v.id);
   if(v.sourceIn<0||v.sourceIn>=v.sourceOut)errors.push(v.id+'.sourceIn：0 ≤ 開始 < 終了 が必要です');
@@ -180,7 +193,7 @@ function validate(raw,base,proposal=false){
   p.scenes.push(v);
  }
  if(!Array.isArray(raw.questions??[])||(raw.questions??[]).length>100)errors.push('questions：100件以内の配列が必要です');
- p.questions=(Array.isArray(raw.questions)?raw.questions:[]).map((q,i)=>str(q,'questions['+i+']',500));
+ p.questions=(Array.isArray(raw.questions)?raw.questions:[]).flatMap((q,i)=>{if(proposal&&typeof q!=='string'){warnings.push('questions['+i+']：文字列でないため除外しました');return []}return [str(q,'questions['+i+']',500)]});
  return {project:p,errors,warnings};
 }
 function duration(s,a){return Math.max(s.sourceOut-s.sourceIn,.15+(a?.duration??0)+.25)}
@@ -609,11 +622,12 @@ async function runDetail(plan){
 }
 function nextRangesPlan(raw,warnings,next){
  // Follow-up detail images are the exception path: only the moments Copilot reports as unreadable.
+ if(raw.nextRanges===null){warnings.push('nextRanges：nullを空配列として扱いました');return null}
  if(raw.nextRanges===undefined||(Array.isArray(raw.nextRanges)&&!raw.nextRanges.length))return null;
  try{return Core.detailRequest({schemaVersion:1,kind:'detailRequest',title:typeof raw.title==='string'&&raw.title.trim()?raw.title:'読めなかった箇所の確認',ranges:raw.nextRanges,questions:[],steps:next.steps.map(q=>q.status+'：'+q.text)},project.source?.duration)}
  catch(e){warnings.push('nextRanges：次に確認する範囲を使えません（'+e.message+'）。必要なら「今の位置を画像で保存」で読めなかった時刻の画像を追加してください。');return null}
 }
-async function importProposal(){if(busy)return;$('structureIntake').open=true;try{let raw;try{raw=Core.parse($('proposal').value)}catch(e){throw Error(e.message+'\nCopilotの回答のコード部分を、最初の { から最後の } までコピーし直してください。文章だけの回答の場合は、同じ会話で「指定したJSON形式で回答してください」と依頼してください。')}if(raw?.kind==='detailRequest'){if(!sourceURL)throw Error('先に録画を読み込んでください');const plan=Core.detailRequest(raw,project.source?.duration);if(await runDetail(plan)){$('proposal').value='';$('proposal').removeAttribute('aria-invalid')}else feedback('proposalFeedback',$('storyboardFeedback').textContent||'詳細画像を生成できませんでした。回答を保持しています。','warning');return}const r=Core.validate(raw,project,true);if(r.errors.length){$('proposal').setAttribute('aria-invalid','true');feedback('proposalFeedback',r.errors.join('\n'),'error');revealControl($('proposal'));return}if(project.scenes.length&&!confirm('現在の構成を新しい案に差し替えますか？IDが一致する音声を保持し、「変更を取り消す」で元へ戻せます。'))return;stopPlayer();sceneErrors.clear();nextPlan=sourceURL?nextRangesPlan(raw,r.warnings,r.project):null;appliedProposalWarnings=[...r.warnings];copilotMode=true;detailPending=false;commit(r.project);audios=new Map([...audios].filter(([id])=>scene(id)));$('proposal').removeAttribute('aria-invalid');update();$('structureIntake').open=!!(r.warnings.length||project.questions.length);focusHeading(2);feedback('proposalFeedback','構成を適用しました。下の場面を確認してください。'+(r.warnings.length?'\n'+r.warnings.join('\n'):''),r.warnings.length?'warning':'notice');updateCopilotNotes()}catch(e){$('proposal').setAttribute('aria-invalid','true');feedback('proposalFeedback','JSONを取り込めません：'+e.message,'error');revealControl($('proposal'))}}
+async function importProposal(){if(busy)return;$('structureIntake').open=true;try{let raw;const parseWarnings=[];try{raw=Core.parse($('proposal').value,true,parseWarnings)}catch(e){throw Error(e.message+'\nCopilotの回答のコード部分を、最初の { から最後の } までコピーし直してください。文章だけの回答の場合は、同じ会話で「指定したJSON形式で回答してください」と依頼してください。')}if(raw?.kind==='detailRequest'){if(!sourceURL)throw Error('先に録画を読み込んでください');const plan=Core.detailRequest(raw,project.source?.duration);if(await runDetail(plan)){$('proposal').value='';$('proposal').removeAttribute('aria-invalid')}else feedback('proposalFeedback',$('storyboardFeedback').textContent||'詳細画像を生成できませんでした。回答を保持しています。','warning');return}const r=Core.validate(raw,project,true);r.warnings.unshift(...parseWarnings);if(r.errors.length){$('proposal').setAttribute('aria-invalid','true');feedback('proposalFeedback',r.errors.join('\n'),'error');revealControl($('proposal'));return}if(project.scenes.length&&!confirm('現在の構成を新しい案に差し替えますか？IDが一致する音声を保持し、「変更を取り消す」で元へ戻せます。'))return;stopPlayer();sceneErrors.clear();nextPlan=sourceURL?nextRangesPlan(raw,r.warnings,r.project):null;appliedProposalWarnings=[...r.warnings];copilotMode=true;detailPending=false;commit(r.project);audios=new Map([...audios].filter(([id])=>scene(id)));$('proposal').removeAttribute('aria-invalid');update();$('structureIntake').open=!!(r.warnings.length||project.questions.length);focusHeading(2);feedback('proposalFeedback','構成を適用しました。下の場面を確認してください。'+(r.warnings.length?'\n'+r.warnings.join('\n'):''),r.warnings.length?'warning':'notice');updateCopilotNotes()}catch(e){$('proposal').setAttribute('aria-invalid','true');feedback('proposalFeedback','JSONを取り込めません：'+e.message,'error');revealControl($('proposal'))}}
 async function restore(file){if(busy)return;stopPlayer();busySet(true,'restore');const token=++operation;try{const text=await file.text();if(token!==operation)return;const r=Core.validate(Core.parse(text),project);if(r.errors.length){note(r.errors.join('\n'),'error');return}if(dirty&&!confirm('未保存の編集を置き換えますか？'))return;stopPlayer();clearFeedback();sourceReturnScene='';$('sourceTrimDetails').open=false;commit(r.project);audios.clear();expectedAudioText=new Map(project.scenes.filter(s=>s.audioAssigned||s.audioMeta||s.audioTextAtImport).map(s=>[s.id,{text:s.audioTextAtImport,fileName:s.audioFile,meta:s.audioMeta}]));pending=[];sourceConfirmed=false;sourceFile=null;if(sourceURL)URL.revokeObjectURL(sourceURL);sourceURL='';clearExport();regionSelection=null;dragStart=null;videos.forEach(v=>{v.removeAttribute('src');v.load()});clearFrames();storyTimes=[];overviewTimes=[];eventIndex=[];for(const id of ['purpose','audience','extraTimes','regionName','proposal'])$(id).value='';history=[];dirty=false;saveState='restored';$('structureIntake').open=false;restoring=true;currentStep=1;$('timeline').value=0;update();focusHeading(1);note('編集データを復元しました。'+(project.audioMode==='none'?'同じ録画を再選択してください。声なしのためWAVは不要です。':'録画とWAVを再選択してください。')+'名称・サイズ・更新日時・動画情報を照合します。'+(r.warnings.length?'\n'+r.warnings.join('\n'):''))}catch(e){if(token===operation)note('プロジェクトを読み込めません：'+e.message,'error')}finally{busySet(false)}}
 async function importAudio(files){if(project.audioMode==='none'){audioNote('声を付ける場合は、先に「声を付ける（任意）」を選んでください','warning');return}
  if(busy)return;if(!project.scenes.length){audioNote('構成を取り込むか場面を追加してから、WAVを選んでください','warning');return}

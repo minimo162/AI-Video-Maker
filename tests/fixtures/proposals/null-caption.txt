@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "title": "確認手順",
+  "scenes": [
+    {
+      "id": "s001",
+      "sourceIn": 0,
+      "sourceOut": 6,
+      "caption": null,
+      "narration": "説明",
+      "captionPosition": "bottom",
+      "regionId": "",
+      "effect": "none"
+    }
+  ],
+  "questions": []
+}
