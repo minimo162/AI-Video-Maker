@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "scenes": [
+    {
+      "id": "s001",
+      "sourceIn": 0,
+      "sourceOut": 6,
+      "caption": "確認",
+      "narration": "説明",
+      "captionPosition": "bottom",
+      "regionId": "",
+      "effect": "none"
+    }
+  ],
+  "questions": []
+}

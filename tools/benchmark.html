@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<title>AI Video Maker — 変化検出の精度ベンチマーク</title>
+<style>
+body{margin:0;background:#f4f7f9;color:#142d40;font:18px/1.75 "BIZ UDPGothic","BIZ UDPゴシック","Yu Gothic","Meiryo",system-ui,sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px}section{background:#fff;border:1px solid #d9e3e8;border-radius:14px;padding:16px 20px;margin:16px 0}
+h1{font-size:26px;margin:0 0 8px}h2{font-size:21px;margin:0 0 8px}label{display:block;margin:8px 0}input,textarea,button{font:inherit}
+textarea{width:100%;min-height:9em;box-sizing:border-box}button{min-height:46px;padding:8px 16px;border-radius:10px;border:1px solid #b7c7d1;background:#fff;font-weight:600;cursor:pointer}
+.hint{color:#536879;font-size:16px}.error{color:#9b253c}
+</style>
+</head>
+<body>
+<main>
+<h1>変化検出の精度ベンチマーク</h1>
+<p>正解の操作表（CSV）と、アプリが作った出来事一覧を比べ、取りこぼし率・誤検出率・時刻のずれを出します。アプリ本体と同じ走査の結果をそのまま使うので、Edge の実機での結果を測れます。手順は docs/BENCHMARK_JA.md を見てください。</p>
+<p class="hint">このページは通信しません。録画も読み込みません。</p>
+<section>
+<h2>1. 正解の操作表（CSV）</h2>
+<p class="hint">1行目は見出し <code>time,kind,target,intermediate</code>。time は操作した元動画の秒、intermediate はダイアログ内の選択など「途中の状態」なら 1。</p>
+<label>正解のCSV<textarea id="truth" placeholder="time,kind,target,intermediate&#10;12.5,クリック,ホーム>貼り付け,0"></textarea></label>
+</section>
+<section>
+<h2>2. アプリの出来事一覧</h2>
+<p class="hint">アプリで出来事画像を作った後、「コピーする中身を見る」の依頼文をすべて貼り付けます（「元動画長」と「出来事一覧」の行を読み取ります）。</p>
+<label>依頼文<textarea id="events"></textarea></label>
+<label>走査の所要時間（秒、任意。アプリの「所要 ○分○秒」）<input id="scanSeconds" inputmode="decimal"></label>
+<label>一致とみなす時刻の幅（±秒）<input id="tolerance" value="1" inputmode="decimal"></label>
+<button id="run">比べる</button>
+<div id="result" role="status"></div>
+<label>VALIDATION.md に貼る記録<textarea id="record" readonly></textarea></label>
+</section>
+</main>
+<script>
+const Bench=(()=>{
+function parseTruth(text){
+ const rows=[],lines=String(text??'').replace(/^﻿/,'').split(/\r?\n/).map(l=>l.trim()).filter(l=>l&&!l.startsWith('#'));
+ if(!lines.length)throw Error('正解のCSVが空です');
+ const head=lines[0].split(',').map(h=>h.trim().toLowerCase()),col=name=>head.indexOf(name);
+ if(col('time')<0)throw Error('正解のCSVの1行目に time の列が必要です');
+ for(const [i,line] of lines.slice(1).entries()){const cells=line.split(','),time=Number(cells[col('time')]);if(!Number.isFinite(time)||time<0)throw Error('正解のCSVの'+(i+2)+'行目：time が数値ではありません');
+  rows.push({time,kind:(cells[col('kind')]??'').trim(),target:(cells[col('target')]??'').trim(),intermediate:col('intermediate')>=0&&/^(1|true|yes|はい)$/i.test((cells[col('intermediate')]??'').trim())})}
+ return rows.sort((a,b)=>a.time-b.time);
+}
+function parseEvents(text){
+ // Accepts the full prompt copied from the app, or just the JSON array of [time,file,kind,position,cursor].
+ text=String(text??'');const durationMatch=text.match(/元動画長：([\d.]+)秒/);let list;
+ const marker=text.match(/出来事一覧[^：\n]*：(\[[^\n]*\])/);
+ try{list=JSON.parse(marker?marker[1]:text.trim())}catch{throw Error('出来事一覧を読み取れません。アプリの依頼文をすべて貼り付けてください')}
+ if(!Array.isArray(list))throw Error('出来事一覧は配列が必要です');
+ const events=list.map((e,i)=>{if(!Array.isArray(e)||!Number.isFinite(e[0]))throw Error('出来事一覧の'+(i+1)+'件目の形が違います');return {time:e[0],file:e[1]??'',kind:e[2]??'',position:e[3]??'',cursor:e[4]??''}});
+ return {duration:durationMatch?Number(durationMatch[1]):null,events};
+}
+// Mirrors eventCaptures() in index.html: evenly spaced full frames are added for overview, not because the screen changed.
+function anchorTimes(duration){if(!(duration>0))return [];const gap=Math.max(8,Math.min(150,duration/20)),out=[];for(let t=0;t<duration;t+=gap)out.push(Math.min(t,Math.max(0,duration-.05)));out.push(Math.max(0,duration-.1));return out}
+function isAnchor(e,anchors){return e.kind==='全画面'&&anchors.some(t=>Math.abs(t-e.time)<=.06)}
+function median(v){if(!v.length)return null;const s=[...v].sort((a,b)=>a-b),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2}
+function score(truth,parsed,options={}){
+ const tol=options.tolerance??1,anchors=anchorTimes(parsed.duration);
+ // Detections are change events; user-specified times and cursor crops are auxiliary and are reported separately.
+ const detections=parsed.events.filter(e=>['局所','全画面'].includes(e.kind)&&!isAnchor(e,anchors));
+ const near=t=>detections.filter(e=>Math.abs(e.time-t)<=tol+1e-9);
+ const matched=truth.map(op=>{const hits=near(op.time),best=hits.sort((a,b)=>Math.abs(a.time-op.time)-Math.abs(b.time-op.time))[0];return {...op,event:best??null,offset:best?best.time-op.time:null}});
+ const hit=matched.filter(m=>m.event),inter=matched.filter(m=>m.intermediate),tp=detections.filter(e=>truth.some(op=>Math.abs(e.time-op.time)<=tol+1e-9));
+ const offsets=hit.map(m=>m.offset),abs=offsets.map(Math.abs);
+ const cursorTargets=parsed.events.filter(e=>!isAnchor(e,anchors)&&e.kind!=='指定'&&truth.some(op=>Math.abs(e.time-op.time)<=tol+1e-9));
+ return {
+  truth:truth.length,detections:detections.length,anchors:parsed.events.length-detections.length,tolerance:tol,
+  recall:truth.length?hit.length/truth.length:null,missRate:truth.length?1-hit.length/truth.length:null,
+  precision:detections.length?tp.length/detections.length:null,falseRate:detections.length?1-tp.length/detections.length:null,
+  intermediate:inter.length?inter.filter(m=>m.event).length/inter.length:null,intermediateCount:inter.length,
+  offsetMedian:median(offsets),offsetMeanAbs:abs.length?abs.reduce((a,b)=>a+b,0)/abs.length:null,offsetMaxAbs:abs.length?Math.max(...abs):null,
+  cursorRate:cursorTargets.length?cursorTargets.filter(e=>e.cursor).length/cursorTargets.length:null,
+  scanRatio:options.scanSeconds>0&&parsed.duration>0?options.scanSeconds/parsed.duration:null,
+  misses:matched.filter(m=>!m.event).map(({time,kind,target})=>({time,kind,target})),
+  falsePositives:detections.filter(e=>!tp.includes(e)).map(e=>({time:e.time,kind:e.kind,position:e.position}))
+ };
+}
+const pct=v=>v==null?'—':(v*100).toFixed(1)+'%',sec=v=>v==null?'—':(v>=0?'+':'')+v.toFixed(2)+'秒';
+function report(r,meta={}){
+ return ['### 変化検出のベンチマーク（'+(meta.date??'日付未記入')+'）','','- 録画：'+(meta.recording||'未記入')+'、環境：'+(meta.environment||'未記入'),'- 正解の操作 '+r.truth+' 件、検出した変化 '+r.detections+' 件（一定間隔の全画面・指定時刻・カーソル周辺 '+r.anchors+' 件は除外）、一致の幅 ±'+r.tolerance+'秒','',
+  '| 指標 | 値 |','|---|---:|','| 再現率 | '+pct(r.recall)+' |','| 取りこぼし率 | '+pct(r.missRate)+' |','| 適合率 | '+pct(r.precision)+' |','| 誤検出率 | '+pct(r.falseRate)+' |','| 途中の状態の捕捉率（'+r.intermediateCount+' 件） | '+pct(r.intermediate)+' |',
+  '| 時刻のずれ（中央値） | '+sec(r.offsetMedian)+' |','| 時刻のずれ（絶対値の平均） | '+(r.offsetMeanAbs==null?'—':r.offsetMeanAbs.toFixed(2)+'秒')+' |','| 時刻のずれ（絶対値の最大） | '+(r.offsetMaxAbs==null?'—':r.offsetMaxAbs.toFixed(2)+'秒')+' |','| カーソル検出率（一致した出来事） | '+pct(r.cursorRate)+' |','| 走査時間 ÷ 録画の長さ | '+(r.scanRatio==null?'—':(r.scanRatio*100).toFixed(0)+'%')+' |',
+  '',r.misses.length?'取りこぼした操作：'+r.misses.map(m=>m.time+'秒 '+m.kind+' '+m.target).join('、'):'取りこぼした操作：なし',r.falsePositives.length?'正解に無い変化：'+r.falsePositives.map(e=>e.time+'秒（'+e.kind+'・'+e.position+'）').join('、'):'正解に無い変化：なし'].join('\n');
+}
+return {parseTruth,parseEvents,anchorTimes,score,report};
+})();
+if(typeof module!=='undefined')module.exports=Bench;
+</script>
+<script>
+const $=id=>document.getElementById(id);
+$('run').onclick=()=>{
+ try{const truth=Bench.parseTruth($('truth').value),parsed=Bench.parseEvents($('events').value),tolerance=Number($('tolerance').value)||1,r=Bench.score(truth,parsed,{tolerance,scanSeconds:Number($('scanSeconds').value)||0});
+  $('record').value=Bench.report(r,{date:new Date().toISOString().slice(0,10)});$('result').className='';$('result').textContent='再現率 '+(r.recall==null?'—':(r.recall*100).toFixed(1)+'%')+'、誤検出率 '+(r.falseRate==null?'—':(r.falseRate*100).toFixed(1)+'%')+'。詳しい結果は下の記録欄にあります。録画と環境の名前を書き足してから貼ってください。'}
+ catch(e){$('result').className='error';$('result').textContent=e.message}
+};
+</script>
+</body>
+</html>

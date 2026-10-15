@@ -1,0 +1,21 @@
+回答です。
+```json
+{
+  "schemaVersion": 1,
+  "title": "確認手順",
+  "scenes": [
+    {
+      "id": "s001",
+      "sourceIn": 0,
+      "sourceOut": 6,
+      "caption": "確認",
+      "narration": "説明",
+      "captionPosition": "bottom",
+      "regionId": "",
+      "effect": "none"
+    }
+  ],
+  "questions": []
+}
+```
+確認してください。
