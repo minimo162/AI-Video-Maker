@@ -294,3 +294,28 @@ Copilot回答の取り込みに限り、存在しないregionIdや領域なし�
 `node --test tests/*.cjs` は8ファイルすべて成功（失敗0・スキップ0）。各ファイルを個別に実行した結果も、core 34、editor 21、media-controller 63、workflow 122、readability 13、navigation 29、detail-pass 26、package 1、**計309項目**が成功しました。配布ZIPの検証はPython 3で実行しています。コンフリクトマーカーが残っていないことと `git diff --check` も確認しました。
 
 実ブラウザー、社内録画、Copilotとの受け渡し、Edgeでの書き出しは今回の検証対象外です。
+
+
+## 2026-10-15 レビュー提案（P0〜P2-1）の実装
+
+対象はブランチ `opus-improvements`（main `1e044d9` から分岐）。レビュー提案のうち、次を実装しました。
+
+- P0-1：案内のボタン名を実際の「動画を作成してダウンロード」に統一し、文書とUIの名前を照合するテストを追加。
+- P0-2：出来事画像・詳細画像の走査とカーソル検出は、タブが非表示でも止めない（書き出しとプレビューは今までどおり中断）。
+- M1：連続した変化の途中の状態（ダイアログ内の選択など）を、次の変化の直前の画像として最大2つ残す。
+- P0-3：Copilotの回答に限り、前後の文章・コードフェンス1組からJSONを取り出し、title の欠落・null、caption／narration の null、questions の文字列でない要素、`nextRanges: null` を警告付きで補う。保存した作業JSONの読み込みは厳密なまま。よくある崩れの回答例10種を `tests/fixtures/proposals/` に置いた。
+- P0-4：依頼文の回答例の `nextRanges` を空配列にし、依頼文の文字数を表示。暫定の目安8,000文字を超えると警告する（**目安の値は実Copilotで測っていない**）。
+- P0-5：配布ZIPの中の相対リンクを `package.py` で検査し、切れていれば失敗させる。テストが読む `tests/fixtures/` と、許可リストに漏れていたテストを同梱。
+- L3：見せたい操作と見る人を作業JSON（`brief`）に保存し、再開後の依頼文にも入れる。
+- L2：0.5秒刻みの再確認の上限（2400回）に達したとき、どの時刻から粗くなったかを表示する。
+- M8：`docs/CODE_REVIEW_JA.md` の冒頭に当時のコミットと今との違いを書き、USER_GUIDE と初心者ガイドの古い説明を更新。
+- P1-1：可読性の較正シート（`tools/calibration.html`、`tools/calibration-score.cjs`、`docs/CALIBRATION_JA.md`）。シートの大きさは本番の `packSheets` と同じであることをテストで確かめた。ヘッドレスChromeで 3888×3438 の較正PNGを描けることを確認した。**実Copilotでは未計測。**
+- P1-2：変化検出の精度ベンチマーク（`tools/benchmark.html`、`tools/benchmark.cjs`、`docs/BENCHMARK_JA.md`）。合成フレームをアプリと同じ `frameChange` → `eventCaptures` に通すと、8操作（ダイアログ内の2回の選択を含む）を±3の画素ノイズのもとで全部検出し、誤検出は0だった。縮小後に 2×2 px（1080pで約15×15 px）しか変わらない操作は検出できなかった。**実録画では未計測。**
+- P1-3：社内PCでの受け入れ確認チェックリスト（`docs/ACCEPTANCE_CHECKLIST_JA.md`）。**未実施。**
+- P2-1：「隠す領域」。Copilotに渡す画像（出来事・詳細・現在位置）と、走査・カーソル検出の段階で範囲を黒く塗り、範囲の中の変化を出来事として数えない。作業JSONに保存・復元する。完成動画は塗りつぶさない。
+
+PR #21（変化直前のカーソル検出）は、この記録の前に検証の節がありませんでした。自動テスト（`tests/detail-pass.test.cjs` の理想的なドット絵のカーソル）だけで、実録画のカーソル（圧縮のぼけ、手の形・Iビーム）での検出率は未計測です。P1-2 のベンチマークでカーソル検出率を測れます。
+
+`node --test tests/*.cjs` は13ファイルすべて成功（失敗0・スキップ0、Node.js v20.19.2、配布ZIPのテストは Python 3.13.5）。各ファイルを個別に実行した結果は、core 39、editor 21、media-controller 63、workflow 123、readability 13、navigation 29、detail-pass 37、package 2、button-labels 3、doc-links 3、calibration 6、benchmark 6、masks 5、**計350項目**（実測値）。
+
+ヘッドレスChromeで `index.html` と `tools/calibration.html` を開き、スクリプトのエラーが出ないこと、依頼文の文字数の表示を確認しました。録画を読み込んだ実ブラウザーでの操作、隠す領域の実際の画素、Edge での走査時間、実Copilotとの受け渡しは検証していません。

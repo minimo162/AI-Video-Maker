@@ -106,8 +106,13 @@ Windows の PowerShell でも同じコマンドで動きます（`node --test te
     node tests/navigation.test.cjs
     node tests/detail-pass.test.cjs
     node tests/package.test.cjs
+    node tests/button-labels.test.cjs
+    node tests/doc-links.test.cjs
+    node tests/calibration.test.cjs
+    node tests/benchmark.test.cjs
+    node tests/masks.test.cjs
 
-コア34項目・編集ハンドラー21項目・再生／書出し制御63項目・工程UI122項目・文字表示の静的検査13項目・工程移動29項目・出来事画像と手順・カーソル検出26項目・配布ZIP1項目、8ファイルの計309項目を検証しました（各ファイルの実行結果に基づく実測値）。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
+コア39項目・編集ハンドラー21項目・再生／書出し制御63項目・工程UI123項目・文字表示の静的検査13項目・工程移動29項目・出来事画像と手順・カーソル検出37項目・配布ZIP2項目・ボタン名の照合3項目・文書のリンク3項目・可読性の較正6項目・検出精度のベンチマーク6項目・隠す領域5項目、13ファイルの計350項目を検証しました（各ファイルの実行結果に基づく実測値）。編集検証はDOM・媒体のシミュレーションであり、ブラウザAPIを実行していません。詳細と残項目は [検証記録](VALIDATION.md)、Claude Opus 5.5によるコードレビューと対応は [レビュー記録](REVIEW.md) にあります。
 
 PR #3のWindows VM／Edge検証報告と今回の利用者による実Copilot・VOICEVOXの短尺MP4確認は、[検証記録](VALIDATION.md)に区別して記載しています。90秒の同期、実UIのcancel→retry、社内PCは引き続き未検証です。
 
